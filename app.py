@@ -16,6 +16,7 @@ import pandas as pd
 import streamlit as st
 from openpyxl import load_workbook
 
+import graficos
 import motor_matriz as motor
 
 RAIZ = Path(__file__).resolve().parent
@@ -296,9 +297,17 @@ if r:
                 unsafe_allow_html=True)
         else:
             st.error("Ninguno compatible (R9): los cuatro marcos quedaron excluidos.")
-        with tempfile.TemporaryDirectory() as tmp:
-            png = motor.grafico(r, os.path.join(tmp, "g.png"), st.session_state.titulo)
-            st.image(png, use_container_width=True)
+        cfg = {"displayModeBar": False, "locale": "es"}
+        t1, t2, t3 = st.tabs(["Puntaje total", "Desglose por criterio", "Perfil de compatibilidad"])
+        with t1:
+            st.plotly_chart(graficos.puntaje_total(r), width="stretch", config=cfg)
+        with t2:
+            st.caption("Cada segmento es peso × compatibilidad de un criterio. Pase el cursor para ver el cálculo; "
+                       "toque un criterio en la leyenda para ocultarlo.")
+            st.plotly_chart(graficos.desglose(r), width="stretch", config=cfg)
+        with t3:
+            st.caption("Compatibilidad 0–5 de cada marco en cada criterio. Toque un marco en la leyenda para compararlo.")
+            st.plotly_chart(graficos.perfil(r), width="stretch", config=cfg)
         c = r["cobertura"]
         st.caption(f"Datos por peso: explícito {c['explícito']:.0%} · inferido {c['inferido']:.0%} · faltante {c['faltante']:.0%}")
         if r["recomendacion"] and r["segundo"]:
@@ -345,7 +354,7 @@ if r:
             filas.append(fila)
         filas.append({"ID": "Total", "Nivel": "", "Estado": "", "Peso": "1,00",
                       **{motor.CORTO[m]: motor._fmt(r["totales"][m]) for m in motor.MARCOS}})
-        st.dataframe(pd.DataFrame(filas), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch")
         excl_txt = [f"**{m}** excluido (R3): compatibilidad 0 en {', '.join(r['auto_excl'][m])}" for m in motor.MARCOS if r["auto_excl"][m]]
         excl_txt += [f"**{m}** excluido (R4): {r['excl_manual'][m]}" for m in motor.MARCOS if m in r["excl_manual"]]
         st.markdown("**Restricciones críticas:** " + ("; ".join(excl_txt) if excl_txt else "ninguna, los cuatro marcos son elegibles."))
@@ -353,7 +362,7 @@ if r:
         if r.get("faltantes"):
             st.dataframe(pd.DataFrame([{"Competidor": x, "Brecha actual": motor._fmt(v["brecha"]),
                                         "Ajuste peor caso": motor._fmt(v["ajuste"]), "Brecha peor caso": motor._fmt(v["peor"])}
-                                       for x, v in r["peor_brecha"].items()]), hide_index=True, use_container_width=True)
+                                       for x, v in r["peor_brecha"].items()]), hide_index=True, width="stretch")
 
 with st.expander("Reglas de decisión de la matriz"):
     st.markdown(

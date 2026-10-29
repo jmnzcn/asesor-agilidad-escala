@@ -1,5 +1,6 @@
-streamlit>=1.40
+streamlit>=1.50
 openpyxl>=3.1
 matplotlib>=3.8
 pandas>=2.1
+plotly>=5.20
 google-genai>=1.0
