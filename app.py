@@ -65,6 +65,14 @@ def cargar_en_estado(titulo: str, texto: str, ficha: dict, origen: str, exclusio
     st.session_state.version = st.session_state.get("version", 0) + 1  # renueva los widgets
 
 
+def tema() -> str:
+    """Tema activo de Streamlit, para elegir los colores de los gráficos."""
+    try:
+        return "claro" if st.context.theme.type == "light" else "oscuro"
+    except Exception:  # versiones sin st.context.theme
+        return "oscuro"
+
+
 def ahora() -> str:
     return datetime.now(HORA_CR).strftime("%d/%m/%Y %H:%M:%S")
 
@@ -292,8 +300,7 @@ def panel_bitacora():
     cambios = [(fa, fb) for fa, fb in zip(A["filas"], B["filas"]) if (fa["nivel"], fa["estado"]) != (fb["nivel"], fb["estado"])]
     st.markdown(f"**A:** {_txt_total(A)} ({_robustez_corta(A)}) → **B:** {_txt_total(B)} ({_robustez_corta(B)}). "
                 + (f"Cambiaron {len(cambios)} de 7 criterios." if cambios else "La ficha es la misma en ambas ejecuciones."))
-    st.plotly_chart(graficos.comparar(A, B, f"A · #{A['n']}", f"B · #{B['n']}"), width="stretch",
-                    config={"displayModeBar": False, "locale": "es"})
+    st.html(graficos.comparar(A, B, f"A · #{A['n']}", f"B · #{B['n']}", tema()))
     filas = []
     for fa, fb in zip(A["filas"], B["filas"]):
         filas.append({"ID": fa["id"], "Criterio": fa["criterio"], "A": f"{fa['nivel']} ({fa['estado']})",
@@ -438,17 +445,17 @@ if r:
             st.success(f"**Tras su aclaración:** {_txt_total(antes)} ({_robustez_corta(antes).lower()}) → "
                        f"**{_txt_total(ahora_)}** ({_robustez_corta(ahora_).lower()}). "
                        + ("Criterios que cambiaron: " + "; ".join(cambios) + "." if cambios else "La ficha no cambió."))
-        cfg = {"displayModeBar": False, "locale": "es"}
-        t1, t2, t3 = st.tabs(["Puntaje total", "Desglose por criterio", "Perfil de compatibilidad"])
+        t1, t2, t3 = st.tabs(["Puntaje total", "Desglose por criterio", "Matriz de compatibilidad"])
         with t1:
-            st.plotly_chart(graficos.puntaje_total(r), width="stretch", config=cfg)
+            st.html(graficos.puntaje_total(r, tema()))
         with t2:
-            st.caption("Cada segmento es peso × compatibilidad de un criterio. Pase el cursor para ver el cálculo; "
-                       "toque un criterio en la leyenda para ocultarlo.")
-            st.plotly_chart(graficos.desglose(r), width="stretch", config=cfg)
+            st.caption("Cada segmento es peso × compatibilidad de un criterio. Pase el cursor por un segmento para ver el "
+                       "cálculo, o por un criterio de la leyenda para resaltarlo en los cuatro marcos.")
+            st.html(graficos.desglose(r, tema()))
         with t3:
-            st.caption("Compatibilidad 0–5 de cada marco en cada criterio. Toque un marco en la leyenda para compararlo.")
-            st.plotly_chart(graficos.perfil(r), width="stretch", config=cfg)
+            st.caption("Compatibilidad 0–5 de cada marco en cada criterio (más oscuro = más compatible). "
+                       "Pase el cursor por una celda para ver cuánto aporta.")
+            st.html(graficos.perfil(r, tema()))
         c = r["cobertura"]
         st.caption(f"Datos por peso: explícito {c['explícito']:.0%} · inferido {c['inferido']:.0%} · faltante {c['faltante']:.0%}")
         if r["recomendacion"] and r["segundo"]:
