@@ -467,7 +467,9 @@ if r:
             st.success(f"**Tras su aclaración:** {_txt_total(antes)} ({_robustez_corta(antes).lower()}) → "
                        f"**{_txt_total(ahora_)}** ({_robustez_corta(ahora_).lower()}). "
                        + ("Criterios que cambiaron: " + "; ".join(cambios) + "." if cambios else "La ficha no cambió."))
-        t1, t2, t3 = st.tabs(["Puntaje total", "Desglose por criterio", "Matriz de compatibilidad"])
+        t1, t2, t3, t4 = st.tabs(["Puntaje total", "Desglose por criterio", "Matriz de compatibilidad", "Robustez"])
+        with t4:
+            st.html(graficos.robustez(r, reglas()["criterios"], tema()))
         with t1:
             st.html(graficos.puntaje_total(r, tema()))
         with t2:

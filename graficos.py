@@ -95,6 +95,27 @@ _CSS = """
 .viz .cmp .pt.a{background:transparent;border:2px solid var(--ink2)}
 .viz .cmp .pt.b{background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
 .viz .delta{font-size:12px;color:var(--ink2);font-weight:600}
+/* robustez */
+.viz{--crit:#d03b3b}
+.viz h4{font-size:14px;font-weight:700;margin:4px 0 2px}
+.viz .nota{font-size:12.5px;color:var(--muted);margin:0 0 8px}
+.viz .estado{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:var(--card);margin:2px 0 12px;font-size:13.5px}
+.viz .estado b{font-weight:700}
+.viz .ico{flex:0 0 auto;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff}
+.viz .ico.ok{background:#0ca30c}.viz .ico.no{background:#fab219;color:#0b0b0b}
+.viz .pista.rb{position:relative;display:block;background-image:none}
+.viz .rb .cero{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink2);opacity:.6;border-radius:1px}
+.viz .rb .act{position:absolute;top:8px;height:14px;background:var(--rest);border-radius:4px}
+.viz .rb .act.gana{background:var(--accent)}
+.viz .rb .perd{position:absolute;top:8px;height:14px;border-radius:4px;
+  background:repeating-linear-gradient(135deg,var(--hatch) 0 2px,transparent 2px 6px);box-shadow:inset 0 0 0 1px var(--hatch)}
+.viz .rb .perd.cruza{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--crit) 70%,transparent) 0 2px,transparent 2px 6px);
+  box-shadow:inset 0 0 0 1px var(--crit)}
+.viz .rb .peor{position:absolute;top:4px;width:3px;height:22px;border-radius:2px;background:var(--ink);transform:translateX(-50%)}
+.viz .val.chico{font-size:15px}
+.viz .chip.w{background:color-mix(in srgb,var(--crit) 18%,transparent);color:var(--ink)}
+.viz .rb .act.riesgo{background:color-mix(in srgb,var(--crit) 60%,var(--rest))}
+.viz .rb .lim{position:absolute;top:2px;bottom:2px;width:0;border-left:2px dashed var(--ink2);opacity:.8}
 </style>
 """
 
@@ -202,6 +223,109 @@ def perfil(r: dict, tema: str = "oscuro") -> str:
     return (_CSS + f'<div class="viz {tema}"><table class="mx"><thead><tr><th></th><th></th>{cab}</tr></thead>'
             f'<tbody>{"".join(filas)}</tbody></table>'
             f'<div class="escala">0{escala}5 · rayado: 0 en un criterio excluyente</div></div>')
+
+
+def datos_decisivos(r: dict, criterios: dict) -> list[tuple]:
+    """Para cada criterio faltante o inferido: cuánto podría reducir, por sí solo, la ventaja del recomendado
+    sobre algún competidor elegible si su nivel resultara otro. Devuelve (fila, reducción, competidor, nivel), de mayor a menor."""
+    rec, out = r.get("recomendacion"), []
+    if not rec:
+        return out
+    for f in r["filas"]:
+        if f["estado"] not in ("Faltante", "Inferido"):
+            continue
+        mejor = None
+        for x in motor.MARCOS:
+            if x == rec or r["excluido"][x]:
+                continue
+            actual = f["puntos"][rec] - f["puntos"][x]
+            for nivel, p in criterios[f["id"]]["niveles"].items():
+                red = f["peso"] * (actual - (p[rec] - p[x]))
+                if red > 0.005 and (mejor is None or red > mejor[0]):
+                    mejor = (red, x, nivel)
+        if mejor:
+            out.append((f, *mejor))
+    return sorted(out, key=lambda t: -t[1])
+
+
+def robustez(r: dict, criterios: dict, tema: str = "oscuro") -> str:
+    """Ventaja del recomendado sobre cada competidor: actual y en el peor caso de los datos faltantes (R7),
+    y qué dato faltante o inferido podría, por sí solo, cambiar más el resultado."""
+    rec = r.get("recomendacion")
+    if not rec:
+        return _CSS + f'<div class="viz {tema}"><p class="nota">Sin recomendación: los cuatro marcos quedaron excluidos (R9).</p></div>'
+    rivales = [x for x in _orden(r) if x != rec and not r["excluido"][x]]
+    peor = {x: r["peor_brecha"].get(x, {"brecha": r["totales"][rec] - r["totales"][x], "peor": r["totales"][rec] - r["totales"][x]})
+            for x in rivales}
+    sensible = r["robustez"].startswith("SENSIBLE")
+    if not r.get("faltantes"):
+        estado = ('<div class="estado"><span class="ico ok">✓</span><div><b>Robusta.</b> No hay datos faltantes: '
+                  f'la ventaja de {escape(rec)} no depende de supuestos sin evidencia.</div></div>')
+    elif sensible:
+        cruzan = [x for x in rivales if peor[x]["peor"] <= 0]
+        lista = cruzan[0] if len(cruzan) == 1 else ", ".join(cruzan[:-1]) + " y " + cruzan[-1]
+        estado = ('<div class="estado"><span class="ico no">!</span><div><b>Provisional.</b> Según cómo se resuelvan los datos '
+                  f'faltantes ({", ".join(r["faltantes"])}), podría{"n" if len(cruzan) > 1 else ""} superar a {escape(rec)}: '
+                  f'{escape(lista)}. Conviene aclarar esos datos antes de decidir.</div></div>')
+    else:
+        estado = ('<div class="estado"><span class="ico ok">✓</span><div><b>Robusta.</b> Aun con el peor valor posible de '
+                  f'{", ".join(r["faltantes"])}, {escape(rec)} sigue adelante de todos.</div></div>')
+    # escala común: de min(0, peor caso) a la mayor brecha
+    vals = [0.0] + [v for x in rivales for v in (peor[x]["brecha"], peor[x]["peor"])]
+    lo, hi = min(vals), max(vals)
+    lo, hi = lo - (hi - lo) * 0.06 if lo < 0 else 0.0, hi * 1.08 or 1.0
+    pos = lambda v: f"{(v - lo) / (hi - lo) * 100:.2f}%"  # noqa: E731
+    filas = []
+    for x in rivales:
+        b, w = peor[x]["brecha"], peor[x]["peor"]
+        tip = (f"Ventaja de {rec} sobre {x}\nActual: {motor._fmt(b)}"
+               + (f"\nPeor caso de los faltantes: {motor._fmt(w)}" if abs(w - b) > 0.005 else "\nNo cambia con los faltantes")
+               + ("\nPodría perder la recomendación" if w <= 0 else ""))
+        # sólido: la ventaja que se conserva aun en el peor caso; rayado: lo que se podría perder
+        firme = max(0.0, min(w, b))
+        perd = (f'<div class="perd{" cruza" if w <= 0 else ""}" style="left:{pos(min(w, b) if w < 0 else firme)};'
+                f'width:calc({pos(b if w >= 0 else 0)} - {pos(min(w, b) if w < 0 else firme)})"></div>' if abs(w - b) > 0.005 else "")
+        if w < 0:
+            firme = b
+        sub = "podría superar al recomendado" if w <= 0 else ("se mantiene detrás" if r.get("faltantes") else "")
+        filas.append(
+            f'<div class="fila tip" data-tip="{_q(tip)}"><div class="nom">{escape(rec)} vs {escape(x)}'
+            + (' <span class="chip w">en riesgo</span>' if w <= 0 else "") + f'<small>{escape(sub)}</small></div>'
+            f'<div class="pista rb"><div class="act gana" style="left:{pos(0)};width:calc({pos(firme)} - {pos(0)})"></div>{perd}'
+            f'<div class="cero" style="left:{pos(0)}"></div>'
+            + (f'<div class="peor" style="left:{pos(w)}"></div>' if abs(w - b) > 0.005 else "")
+            + f'</div><div class="val chico">{motor._fmt(b)}<small>{"peor " + motor._fmt(w) if abs(w - b) > 0.005 else "sin cambio"}</small></div></div>')
+    eje_v = "".join(f'<span style="left:{pos(t)}">{motor._fmt(t)}</span>' for t in sorted({round(lo, 2), 0.0, round(hi, 2)}))
+    eje_html = (f'<div class="eje"><span></span><div class="esc">{eje_v}</div><span></span></div>' if rivales else "")
+    parte1 = ("<h4>Ventaja del recomendado sobre cada marco</h4>"
+              '<p class="nota">Barra: ventaja actual. Rayado y marca: hasta dónde podría bajar en el peor caso de los datos faltantes (R7). '
+              "La línea vertical es el empate: si el rayado la cruza, ese marco podría ganar.</p>"
+              + ("".join(filas) + eje_html if rivales else '<p class="nota">No hay otros marcos elegibles.</p>'))
+    dec = datos_decisivos(r, criterios)
+    if dec:
+        tope = max(max(d[1] for d in dec), min((peor[x]["brecha"] for x in rivales), default=0)) * 1.1
+        filas2 = []
+        for f, red, x, nivel in dec[:5]:
+            lim = peor.get(x, {}).get("brecha", 0)
+            decide = red >= lim - 1e-9
+            tip = (f"{f['id']} {f['criterio']} ({f['estado']}, hoy: {f['nivel']})\nSi fuera «{nivel}», la ventaja de {rec} "
+                   f"sobre {x} bajaría {motor._fmt(red)} (ventaja actual {motor._fmt(lim)})"
+                   + ("\nPor sí solo puede cambiar la recomendación" if decide else ""))
+            filas2.append(
+                f'<div class="fila tip" data-tip="{_q(tip)}"><div class="nom">{f["id"]} {escape(CORTO_CRIT.get(f["id"], f["criterio"]))}'
+                + (' <span class="chip w">decisivo</span>' if decide else "")
+                + f'<small>{escape(f["estado"])} · peor caso: «{escape(nivel)}» favorece a {escape(x)}</small></div>'
+                f'<div class="pista rb"><div class="act{" riesgo" if decide else ""}" style="left:0;width:{red / tope * 100:.2f}%"></div>'
+                f'<div class="lim" style="left:{min(lim / tope, 1) * 100:.2f}%"></div></div>'
+                f'<div class="val chico">−{motor._fmt(red)}<small>vs {escape(motor.CORTO[x])}</small></div></div>')
+        parte2 = ('<h4 style="margin-top:16px">Qué dato decide</h4>'
+                  '<p class="nota">Cuánto podría bajar la ventaja si un dato faltante o inferido resultara en su nivel menos favorable. '
+                  "La línea discontinua es la ventaja actual sobre ese marco: si la barra la alcanza, ese dato por sí solo puede cambiar la recomendación. "
+                  "Son los datos que conviene preguntar primero.</p>" + "".join(filas2))
+    else:
+        parte2 = ('<h4 style="margin-top:16px">Qué dato decide</h4><p class="nota">Ningún dato faltante o inferido puede reducir la ventaja: '
+                  "todos los criterios que afectan el resultado vienen explícitos en el caso.</p>")
+    return _CSS + f'<div class="viz {tema}" style="--izq:minmax(120px,34%);--der:64px">{estado}{parte1}{parte2}</div>'
 
 
 def comparar(a: dict, b: dict, etiqueta_a: str, etiqueta_b: str, tema: str = "oscuro") -> str:
