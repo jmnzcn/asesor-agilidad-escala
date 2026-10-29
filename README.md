@@ -5,6 +5,9 @@ Agente que recomienda **Nexus, LeSS, SAFe o Disciplined Agile** con la matriz de
 - **Interpretar:** Gemini lee el caso, cita la evidencia y llena la ficha de captura (nivel + estado por criterio).
 - **Calcular:** `motor_matriz.py` aplica las reglas R1–R9 con pesos, niveles y puntajes leídos de `Matriz_Decision_Agilidad_Escala.xlsx`.
 - **Auditar:** el botón «Descargar Excel» entrega la matriz con la hoja *Caso_Evaluado* llena; Excel recalcula y muestra los mismos totales.
+- **Aclarar:** si faltan datos, el usuario responde las preguntas del agente en «Responder al agente»; la IA relee el caso y la app muestra el resultado antes y después.
+- **Registrar y comparar:** cada análisis queda en la *Bitácora de ejecuciones* (descargable en CSV o JSON); dos ejecuciones se comparan lado a lado con el aporte que cambió en cada criterio.
+- **Transparencia:** el panel «Transparencia del agente» muestra el modelo, la respuesta JSON de la IA y las instrucciones que recibió.
 
 Sin clave de Gemini la app funciona igual en modo manual (ficha editable, cálculo, gráfico y Excel).
 

@@ -115,6 +115,27 @@ def perfil(r: dict) -> go.Figure:
     return fig
 
 
+def comparar(a: dict, b: dict, etiqueta_a: str, etiqueta_b: str) -> go.Figure:
+    """Totales de dos ejecuciones de la bitácora, marco por marco (A atenuada, B sólida)."""
+    marcos = list(motor.MARCOS)
+    fig = go.Figure()
+    for ej, et, opac in ((a, etiqueta_a, 0.4), (b, etiqueta_b, 1)):
+        fig.add_trace(go.Bar(
+            name=et, x=[motor.CORTO[m] if m != "Disciplined Agile" else "DA" for m in marcos],
+            y=[ej["totales"][m] for m in marcos],
+            marker=dict(color=[COLOR_MARCO[m] for m in marcos], opacity=opac, cornerradius=8,
+                        pattern=dict(shape=["/" if ej["excluido"][m] else "" for m in marcos],
+                                     fgcolor="rgba(255,255,255,0.55)", size=7)),
+            text=[f"<b>{motor._fmt(ej['totales'][m])}</b>" + ("★" if m == ej["recomendacion"] else "") for m in marcos],
+            textposition="outside", cliponaxis=False,
+            hovertemplate="<b>%{x}</b> · " + et + "<br>%{y:.2f} de 5,00<extra></extra>",
+        ))
+    fig.update_layout(barmode="group", bargap=0.3, bargroupgap=0.08,
+                      legend=dict(orientation="h", y=-0.15, x=0, title=None))
+    fig.update_yaxes(range=[0, 5.6], tickvals=[0, 1, 2, 3, 4, 5], gridcolor="rgba(140,150,170,0.18)", zeroline=False)
+    return _base(fig, 320)
+
+
 def _rgba(hexcolor: str, alfa: float) -> str:
     h = hexcolor.lstrip("#")
     return f"rgba({int(h[0:2], 16)},{int(h[2:4], 16)},{int(h[4:6], 16)},{alfa})"

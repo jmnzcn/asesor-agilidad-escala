@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -36,6 +37,8 @@ CASOS = {
 }
 ESTADOS = ["Explícito", "Inferido", "Faltante"]
 COLORES = {"Nexus": "#3566c8", "LeSS": "#24875c", "SAFe": "#c4414f", "Disciplined Agile": "#7454b8"}
+HORA_CR = timezone(timedelta(hours=-6))  # Costa Rica, sin horario de verano
+TEMPERATURA = 0.1
 
 st.set_page_config(page_title="Asesor de Agilidad a Escala", page_icon="🧭", layout="wide")
 
@@ -57,9 +60,17 @@ def cargar_en_estado(titulo: str, texto: str, ficha: dict, origen: str, exclusio
     st.session_state.excl = dict(exclusiones or {})
     st.session_state.origen = origen
     st.session_state.justificacion = ""
+    st.session_state.ia = None      # respuesta cruda de la IA para esta ficha (transparencia)
+    st.session_state.antes = None   # resultado previo a una aclaración (comparación antes → después)
     st.session_state.version = st.session_state.get("version", 0) + 1  # renueva los widgets
 
 
+def ahora() -> str:
+    return datetime.now(HORA_CR).strftime("%d/%m/%Y %H:%M:%S")
+
+
+if "bitacora" not in st.session_state:
+    st.session_state.bitacora = []
 if "ficha" not in st.session_state:
     primero = next(iter(CASOS))
     c = CASOS[primero]
@@ -152,6 +163,148 @@ def prompt_justificacion(texto: str, r: dict) -> str:
             "\n\nRESULTADO:\n" + resumen(r) + "\n\nCASO:\n" + (texto or "")[:4000])
 
 
+def mensaje_error(e: Exception) -> str:
+    t = str(e)
+    if "429" in t or "RESOURCE_EXHAUSTED" in t:
+        return ("La IA recibió demasiadas consultas en este minuto (límite del plan gratuito de Gemini). "
+                "Espere un minuto y vuelva a intentarlo, o llene la ficha a mano: el cálculo y el Excel funcionan igual.")
+    return f"No se pudo completar la lectura con IA: {t}"
+
+
+def analizar_con_ia(texto: str, titulo: str, origen: str = "Ficha generada por IA"):
+    """Envía el caso a la IA, valida la ficha que devuelve y la carga; guarda la respuesta cruda."""
+    cliente, modelo = gemini()
+    from google.genai import types
+    prompt = prompt_extraccion(texto)
+    resp = cliente.models.generate_content(
+        model=modelo, contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json", temperature=TEMPERATURA))
+    salida = json.loads(resp.text)
+    nueva, ajustes = ficha_vacia(), []
+    for cid in nueva:
+        d = (salida.get("ficha") or {}).get(cid) or {}
+        nueva[cid] = {"valor": d.get("valor"), "estado": d.get("estado") or "Faltante",
+                      "evidencia": str(d.get("evidencia") or ""), "supuesto": str(d.get("supuesto") or "")}
+    # un nivel inválido pasa a Faltante y se informa
+    for cid in nueva:
+        try:
+            motor.normalizar_ficha({**ficha_vacia(), cid: nueva[cid]}, reglas())
+        except ValueError:
+            ajustes.append(f"{cid}: la IA propuso «{nueva[cid]['valor']}», que no es un nivel de la matriz; quedó como Faltante.")
+            nueva[cid].update(supuesto=f"La IA propuso «{nueva[cid]['valor']}», que no es un nivel válido.",
+                              valor=None, estado="Faltante")
+    excl = {}
+    for k, val in (salida.get("exclusiones") or {}).items():
+        m = next((x for x in motor.MARCOS if motor._norm(x) == motor._norm(k) or motor._norm(motor.CORTO[x]) == motor._norm(k)), None)
+        if m and val:
+            excl[m] = str(val)
+    cargar_en_estado(titulo, texto, nueva, origen, excl)
+    st.session_state.ia = {"modelo": modelo, "hora": ahora(), "temperatura": TEMPERATURA,
+                           "prompt": prompt, "respuesta": resp.text, "ajustes": ajustes}
+    st.session_state.pedir_justificacion = True
+
+
+# --------------------------------------------------------------------------- bitácora
+def firma(limpia: dict) -> str:
+    return json.dumps([st.session_state.texto, limpia, st.session_state.excl], sort_keys=True, ensure_ascii=False, default=str)
+
+
+def instantanea(r: dict) -> dict:
+    """Lo necesario de un resultado para registrarlo y compararlo después."""
+    return {"totales": dict(r["totales"]), "excluido": dict(r["excluido"]), "recomendacion": r["recomendacion"],
+            "segundo": r["segundo"], "brecha": r["brecha"], "robustez": r["robustez"], "faltantes": list(r.get("faltantes") or []),
+            "filas": [{k: f[k] for k in ("id", "criterio", "nivel", "estado", "valor", "evidencia", "supuesto", "aportes")}
+                      for f in r["filas"]]}
+
+
+def registrar(r: dict, limpia: dict):
+    """Agrega la ejecución actual a la bitácora; si es la misma ficha que la última, solo actualiza la justificación."""
+    b, f = st.session_state.bitacora, firma(limpia)
+    if b and b[-1]["firma"] == f:
+        b[-1]["justificacion"] = st.session_state.justificacion
+        return
+    ia = st.session_state.get("ia") or {}
+    b.append({"n": len(b) + 1, "hora": ahora(), "caso": st.session_state.titulo, "texto": st.session_state.texto,
+              "origen": st.session_state.origen, "modelo": ia.get("modelo", "manual (sin IA)"),
+              "justificacion": st.session_state.justificacion, "exclusiones": dict(st.session_state.excl),
+              "firma": f, **instantanea(r)})
+
+
+def _txt_total(e: dict) -> str:
+    rec = e["recomendacion"]
+    return f"{rec} {motor._fmt(e['totales'][rec])}" if rec else "Ninguno (R9)"
+
+
+def _robustez_corta(e: dict) -> str:
+    return "Sensible" if e["robustez"].startswith("SENSIBLE") else "Robusta"
+
+
+def _delta(d: float) -> str:
+    return "—" if abs(d) < 0.005 else f"{'+' if d > 0 else ''}{motor._fmt(d)}"
+
+
+def panel_bitacora():
+    st.divider()
+    st.header("Bitácora de ejecuciones")
+    b = st.session_state.bitacora
+    st.caption("Cada análisis con IA se registra aquí con su hora, modelo, puntajes, robustez y supuestos; también puede registrar "
+               "una ficha llenada a mano. La bitácora vive mientras esta pestaña esté abierta: descárguela como evidencia.")
+    if not b:
+        st.info("Aún no hay ejecuciones. Pulse «Analizar con IA» en un caso.")
+        return
+    st.dataframe(pd.DataFrame([{
+        "#": e["n"], "Hora": e["hora"], "Caso": e["caso"], "Origen": e["origen"], "Modelo": e["modelo"],
+        **{motor.CORTO[m]: motor._fmt(e["totales"][m]) + (" (excl.)" if e["excluido"][m] else "") for m in motor.MARCOS},
+        "Recomendación": e["recomendacion"] or "Ninguno (R9)", "Robustez": _robustez_corta(e),
+        "Faltantes": ", ".join(e["faltantes"]) or "—"} for e in b]), hide_index=True, width="stretch")
+    exportar = pd.DataFrame([{
+        "n": e["n"], "hora": e["hora"], "caso": e["caso"], "descripcion": e["texto"], "origen": e["origen"], "modelo": e["modelo"],
+        **{f"total_{motor.CORTO[m]}": round(e["totales"][m], 4) for m in motor.MARCOS},
+        "recomendacion": e["recomendacion"] or "Ninguno (R9)", "robustez": e["robustez"], "faltantes": ", ".join(e["faltantes"]),
+        "ficha": " | ".join(f"{f['id']} {f['nivel']} [{f['estado']}]" for f in e["filas"]),
+        "supuestos": " | ".join(f"{f['id']}: {f['supuesto']}" for f in e["filas"] if f["supuesto"]),
+        "justificacion": e["justificacion"]} for e in b])
+    c1, c2, c3 = st.columns([1, 1, 1])
+    c1.download_button("Descargar bitácora (CSV)", exportar.to_csv(index=False).encode("utf-8-sig"),
+                       file_name="Bitacora_ejecuciones.csv", mime="text/csv", type="primary")
+    c2.download_button("Descargar bitácora (JSON)", json.dumps([{k: v for k, v in e.items() if k != "firma"} for e in b],
+                       ensure_ascii=False, indent=2, default=str), file_name="Bitacora_ejecuciones.json", mime="application/json")
+    if c3.button("Vaciar bitácora"):
+        st.session_state.bitacora = []
+        for k in ("cmp_a", "cmp_b"):
+            st.session_state.pop(k, None)
+        st.rerun()
+
+    if len(b) < 2:
+        st.caption("Con dos o más ejecuciones podrá compararlas lado a lado.")
+        return
+    st.subheader("Comparar dos ejecuciones")
+    st.caption("Por ejemplo, el Caso 1 frente a la prueba 4A (cambio de condición) o la 4B antes y después de responder al agente: "
+               "se ve qué criterios cambiaron y cuánto movió cada uno el puntaje de cada marco.")
+    etiquetas = [f"#{e['n']} · {e['caso']} · {_txt_total(e)}" for e in b]
+    ca, cb = st.columns(2)
+    for k in ("cmp_a", "cmp_b"):
+        if st.session_state.get(k, 0) >= len(b):
+            st.session_state.pop(k)
+    ia_ = ca.selectbox("Ejecución A", range(len(b)), index=len(b) - 2, format_func=lambda i: etiquetas[i], key="cmp_a")
+    ib_ = cb.selectbox("Ejecución B", range(len(b)), index=len(b) - 1, format_func=lambda i: etiquetas[i], key="cmp_b")
+    A, B = b[ia_], b[ib_]
+    cambios = [(fa, fb) for fa, fb in zip(A["filas"], B["filas"]) if (fa["nivel"], fa["estado"]) != (fb["nivel"], fb["estado"])]
+    st.markdown(f"**A:** {_txt_total(A)} ({_robustez_corta(A)}) → **B:** {_txt_total(B)} ({_robustez_corta(B)}). "
+                + (f"Cambiaron {len(cambios)} de 7 criterios." if cambios else "La ficha es la misma en ambas ejecuciones."))
+    st.plotly_chart(graficos.comparar(A, B, f"A · #{A['n']}", f"B · #{B['n']}"), width="stretch",
+                    config={"displayModeBar": False, "locale": "es"})
+    filas = []
+    for fa, fb in zip(A["filas"], B["filas"]):
+        filas.append({"ID": fa["id"], "Criterio": fa["criterio"], "A": f"{fa['nivel']} ({fa['estado']})",
+                      "B": f"{fb['nivel']} ({fb['estado']})", "Cambió": "●" if (fa, fb) in cambios else "",
+                      **{f"Δ {motor.CORTO[m]}": _delta(fb["aportes"][m] - fa["aportes"][m]) for m in motor.MARCOS}})
+    filas.append({"ID": "Total", "Criterio": "", "A": "", "B": "", "Cambió": "",
+                  **{f"Δ {motor.CORTO[m]}": _delta(B["totales"][m] - A["totales"][m]) for m in motor.MARCOS}})
+    st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch")
+    st.caption("Δ = aporte en B − aporte en A (peso × compatibilidad). La suma de cada columna explica el cambio del total de ese marco.")
+
+
 # --------------------------------------------------------------------------- interfaz
 st.markdown(
     """
@@ -195,37 +348,15 @@ with izq:
             if len(texto.strip()) < 40:
                 st.warning("Describa el caso con más detalle antes de analizar.")
             else:
-                cliente, modelo = gemini()
-                from google.genai import types
+                listo = False
                 with st.spinner("La IA está leyendo el caso…"):
                     try:
-                        resp = cliente.models.generate_content(
-                            model=modelo, contents=prompt_extraccion(texto),
-                            config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1))
-                        salida = json.loads(resp.text)
-                        nueva = ficha_vacia()
-                        for cid in nueva:
-                            d = (salida.get("ficha") or {}).get(cid) or {}
-                            nueva[cid] = {"valor": d.get("valor"), "estado": d.get("estado") or "Faltante",
-                                          "evidencia": str(d.get("evidencia") or ""), "supuesto": str(d.get("supuesto") or "")}
-                        # un nivel inválido pasa a Faltante y se informa
-                        for cid in nueva:
-                            try:
-                                motor.normalizar_ficha({**ficha_vacia(), cid: nueva[cid]}, reglas())
-                            except ValueError:
-                                nueva[cid].update(supuesto=f"La IA propuso «{nueva[cid]['valor']}», que no es un nivel válido.",
-                                                  valor=None, estado="Faltante")
-                        excl = {}
-                        for k, v in (salida.get("exclusiones") or {}).items():
-                            m = next((x for x in motor.MARCOS if motor._norm(x) == motor._norm(k) or motor._norm(motor.CORTO[x]) == motor._norm(k)), None)
-                            if m and v:
-                                excl[m] = str(v)
-                        cargar_en_estado("Caso evaluado" if sel == "Caso nuevo" else st.session_state.titulo,
-                                         texto, nueva, "Ficha generada por IA", excl)
-                        st.session_state.pedir_justificacion = True
-                        st.rerun()
+                        analizar_con_ia(texto, "Caso evaluado" if sel == "Caso nuevo" else st.session_state.titulo)
+                        listo = True
                     except Exception as e:  # noqa: BLE001
-                        st.error(f"No se pudo completar la lectura con IA: {e}")
+                        st.error(mensaje_error(e))
+                if listo:
+                    st.rerun()
     else:
         st.info("La lectura con IA no está configurada en este despliegue (falta GEMINI_API_KEY). "
                 "Complete la ficha a mano: el cálculo y el Excel funcionan igual.")
@@ -274,6 +405,7 @@ if ficha_sin_datos:
         st.write("Pulse **Analizar con IA**: la IA leerá el caso, citará la evidencia de cada criterio y el motor "
                  "calculará el resultado. También puede llenar los siete criterios a mano." if hay_ia else
                  "Complete los siete criterios de la ficha a mano: el resultado se calcula al instante.")
+    panel_bitacora()
     st.stop()
 try:
     limpia = motor.normalizar_ficha(st.session_state.ficha, reglas())
@@ -298,6 +430,14 @@ if r:
                 unsafe_allow_html=True)
         else:
             st.error("Ninguno compatible (R9): los cuatro marcos quedaron excluidos.")
+        antes = st.session_state.get("antes")
+        if antes:
+            ahora_ = instantanea(r)
+            cambios = [f"{fa['id']} {fa['nivel']} → {fb['nivel']}" for fa, fb in zip(antes["filas"], ahora_["filas"])
+                       if (fa["nivel"], fa["estado"]) != (fb["nivel"], fb["estado"])]
+            st.success(f"**Tras su aclaración:** {_txt_total(antes)} ({_robustez_corta(antes).lower()}) → "
+                       f"**{_txt_total(ahora_)}** ({_robustez_corta(ahora_).lower()}). "
+                       + ("Criterios que cambiaron: " + "; ".join(cambios) + "." if cambios else "La ficha no cambió."))
         cfg = {"displayModeBar": False, "locale": "es"}
         t1, t2, t3 = st.tabs(["Puntaje total", "Desglose por criterio", "Perfil de compatibilidad"])
         with t1:
@@ -318,16 +458,64 @@ if r:
                 st.caption("Riesgos de adopción (compatibilidad ≤ 2): " + "; ".join(f"{cid} {n}" for cid, n, _ in r["riesgos"]))
 
         st.subheader("Justificación")
+        auto = st.session_state.pop("pedir_justificacion", False)
         if hay_ia and r["recomendacion"]:
-            if st.session_state.pop("pedir_justificacion", False) or st.button("Redactar con IA"):
+            if auto or st.button("Redactar con IA"):
                 cliente, modelo = gemini()
+                pj = prompt_justificacion(st.session_state.texto, r)
                 with st.spinner("Redactando…"):
                     try:
-                        st.session_state.justificacion = cliente.models.generate_content(
-                            model=modelo, contents=prompt_justificacion(st.session_state.texto, r)).text
+                        st.session_state.justificacion = cliente.models.generate_content(model=modelo, contents=pj).text
                     except Exception as e:  # noqa: BLE001
-                        st.session_state.justificacion = f"No se pudo redactar la justificación: {e}"
+                        st.session_state.justificacion = f"No se pudo redactar la justificación: {mensaje_error(e)}"
+                if st.session_state.get("ia"):
+                    st.session_state.ia["prompt_justificacion"] = pj
+                registrar(r, limpia)
+        elif auto:
+            registrar(r, limpia)
         st.write(st.session_state.justificacion or "_Use «Analizar con IA» o «Redactar con IA» para obtener la explicación._")
+
+        if hay_ia and r.get("faltantes"):
+            nombres = [f"{cid} {reglas()['criterios'][cid]['nombre']}" for cid in r["faltantes"]]
+            st.subheader("Responder al agente")
+            st.caption(("La recomendación es **provisional**. " if r["robustez"].startswith("SENSIBLE") else "")
+                       + "Faltan datos de: " + "; ".join(nombres) + ". Si los conoce, respóndalos: se agregan al caso como "
+                       "aclaración, la IA vuelve a leerlo y verá el resultado antes y después.")
+            respuesta = st.text_area("Su respuesta a las preguntas del agente", key=f"acl_{v}", height=90,
+                                     placeholder="Ej.: serán 20 equipos y la iniciativa formará parte del portafolio estratégico.")
+            if st.button("Enviar respuesta y recalcular", disabled=not respuesta.strip()):
+                previo, listo = instantanea(r), False
+                with st.spinner("La IA está releyendo el caso con su aclaración…"):
+                    try:
+                        analizar_con_ia(st.session_state.texto.rstrip() + "\n\nAclaración del cliente: " + respuesta.strip(),
+                                        st.session_state.titulo, "Ficha generada por IA tras la aclaración")
+                        st.session_state.antes = previo
+                        listo = True
+                    except Exception as e:  # noqa: BLE001
+                        st.error(mensaje_error(e))
+                if listo:
+                    st.rerun()
+
+        with st.expander("Transparencia del agente: qué respondió la IA"):
+            ia = st.session_state.get("ia")
+            if not ia:
+                st.write("Esta ficha no viene de la IA: se llenó a mano o todavía no se ha analizado el caso.")
+            else:
+                st.markdown(f"Modelo **{ia['modelo']}** · temperatura {ia['temperatura']} · {ia['hora']} (hora de Costa Rica).")
+                st.caption("La app no guarda fichas ni resultados de los casos: cada análisis envía el enunciado a la IA y la ficha "
+                           "de captura es esta respuesta, validada por el motor. Si después editó la ficha a mano, puede diferir.")
+                for a in ia["ajustes"]:
+                    st.warning(a)
+                st.markdown("**Respuesta de la IA (JSON)**")
+                try:
+                    st.code(json.dumps(json.loads(ia["respuesta"]), ensure_ascii=False, indent=2), language="json")
+                except ValueError:
+                    st.code(ia["respuesta"])
+                st.markdown("**Instrucciones enviadas para leer el caso**")
+                st.code(ia["prompt"], language="markdown", wrap_lines=True)
+                if ia.get("prompt_justificacion"):
+                    st.markdown("**Instrucciones enviadas para redactar la justificación** (el resultado ya está calculado; la IA no puede cambiar números)")
+                    st.code(ia["prompt_justificacion"], language="markdown", wrap_lines=True)
 
         st.subheader("Auditoría")
         with tempfile.TemporaryDirectory() as tmp:
@@ -343,6 +531,11 @@ if r:
              "recomendacion": r["recomendacion"], "robustez": r["robustez"]}, ensure_ascii=False, indent=2),
             file_name=f"Ficha_{base}.json", mime="application/json")
         st.caption("Abra la hoja Caso_Evaluado: Excel recalcula con sus fórmulas y debe mostrar los mismos totales.")
+        b = st.session_state.bitacora
+        if not (b and b[-1]["firma"] == firma(limpia)):
+            if st.button("Registrar esta ejecución en la bitácora"):
+                registrar(r, limpia)
+                st.rerun()
 
     with izq:
         st.subheader("Cálculo trazable")
@@ -373,3 +566,5 @@ with st.expander("Reglas de decisión de la matriz"):
         "- **R6 Empate técnico (≤ 0,10):** menos criterios con compatibilidad ≤ 1; luego mayor puntaje en C1+C2+C7; luego el marco más liviano.\n"
         "- **R7 Robustez:** brecha actual + Σ peso × menor diferencia posible en cada criterio faltante; si alguna queda ≤ 0, la recomendación es sensible.\n\n"
         "Pesos, niveles y puntajes se leen de `Matriz_Decision_Agilidad_Escala.xlsx`.")
+
+panel_bitacora()
