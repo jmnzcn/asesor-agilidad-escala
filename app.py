@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -110,7 +111,8 @@ def reglas_para_prompt() -> str:
     for cid, c in reglas()["criterios"].items():
         L.append(f"{cid} {c['nombre']} (peso {c['peso'] * 100:.0f} %{', excluyente' if c['excluyente'] else ''})")
         if cid == "C1":
-            L.append("  valor = número entero de equipos (si solo hay personas: equipos ≈ personas / 10, estado Inferido).")
+            L.append("  valor = número entero de equipos, NUNCA el nombre de la banda (ej.: 22, no \"16 a 50 equipos\"); "
+                     "si solo hay personas: equipos ≈ personas / 10, estado Inferido.")
             L += [f"  bandas: {', '.join(c['niveles'])}"]
         else:
             L += [f'  - "{n}"' for n in c["niveles"]]
@@ -179,6 +181,20 @@ def mensaje_error(e: Exception) -> str:
     return f"No se pudo completar la lectura con IA: {t}"
 
 
+def equipos_desde_texto(valor: str, evidencia: str) -> int | None:
+    """C1 debe ser un número de equipos. Si la IA devolvió texto ("22 equipos" o la banda "16 a 50 equipos"),
+    toma el número que dé la misma banda: el citado en la evidencia o, si no hay, el mínimo de la banda."""
+    nums = [int(x) for x in re.findall(r"\d+", valor)]
+    bandas = {motor._norm(b): b for b in reglas()["criterios"]["C1"]["niveles"]}
+    banda = bandas.get(motor._norm(valor))
+    if not banda:
+        return nums[0] if len(nums) == 1 and nums[0] > 0 else None
+    for n in (int(x) for x in re.findall(r"\d+", evidencia)):
+        if n > 0 and motor.banda_equipos(n) == banda:
+            return n
+    return next((n for n in range(1, 1000) if motor.banda_equipos(n) == banda), None)
+
+
 def analizar_con_ia(texto: str, titulo: str, origen: str = "Ficha generada por IA"):
     """Envía el caso a la IA, valida la ficha que devuelve y la carga; guarda la respuesta cruda."""
     cliente, modelo = gemini()
@@ -193,6 +209,12 @@ def analizar_con_ia(texto: str, titulo: str, origen: str = "Ficha generada por I
         d = (salida.get("ficha") or {}).get(cid) or {}
         nueva[cid] = {"valor": d.get("valor"), "estado": d.get("estado") or "Faltante",
                       "evidencia": str(d.get("evidencia") or ""), "supuesto": str(d.get("supuesto") or "")}
+    c1 = nueva["C1"]
+    if c1["valor"] not in (None, "") and not isinstance(c1["valor"], (int, float)):
+        n = equipos_desde_texto(str(c1["valor"]), c1["evidencia"])
+        if n:
+            ajustes.append(f"C1: la IA respondió «{c1['valor']}» en lugar de un número; se usó {n} equipos.")
+            c1["valor"] = n
     # un nivel inválido pasa a Faltante y se informa
     for cid in nueva:
         try:
