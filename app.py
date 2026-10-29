@@ -21,11 +21,19 @@ import motor_matriz as motor
 
 RAIZ = Path(__file__).resolve().parent
 EXCEL = str(RAIZ / "Matriz_Decision_Agilidad_Escala.xlsx")
-HOJAS_CASO = {"Caso 1 · Banco regional": "Caso1_Banco",
-              "Caso 2 · Aseguradora multinacional": "Caso2_Aseguradora",
-              "Caso 3 · Servicios profesionales": "Caso3_Servicios",
-              "Prueba 4A · Cambio de condición": "Caso4A_Cambio",
-              "Prueba 4B · Datos faltantes": "Caso4B_Faltante"}
+# Enunciados de los casos del curso. Solo el texto: la ficha la llena la IA (o el evaluador) desde cero.
+CASOS = {
+    "Caso 1 · Banco regional": {"titulo": "Caso 1. Banco regional",
+        "texto": "Banco en seis países; 22 equipos distribuidos; varios productos digitales conectados; dependencias con arquitectura, datos, seguridad y operaciones; regulación y necesidad de vincular iniciativas con estrategia e inversiones."},
+    "Caso 2 · Aseguradora multinacional": {"titulo": "Caso 2. Aseguradora multinacional",
+        "texto": "Modernización de pólizas, reclamaciones y riesgos; 25 equipos y aproximadamente 300 profesionales; varias soluciones interdependientes; coordinación de proveedores, negocio y tecnología; planificación transversal y visibilidad de portafolio."},
+    "Caso 3 · Servicios profesionales": {"titulo": "Caso 3. Servicios profesionales",
+        "texto": "Seis equipos para proyectos de clientes distintos; algunos iterativos, otros de mantenimiento y otros híbridos; exigencias contractuales variadas; autonomía y necesidad de adaptar prácticas sin imponer un único proceso."},
+    "Prueba 4A · Cambio de condición": {"titulo": "Prueba 4A. Cambio de condición (variante del Caso 1)",
+        "texto": "El mismo banco regional limita la iniciativa a su aplicación de banca móvil. Participan 7 equipos Scrum sobre un único producto con un solo Product Backlog y un Product Owner. Las dependencias se dan entre los equipos que integran el mismo incremento. La regulación bancaria se mantiene. El presupuesto ya está aprobado y no se requiere gestión de portafolio adicional. Todo el trabajo es desarrollo iterativo de nuevas funcionalidades."},
+    "Prueba 4B · Datos faltantes": {"titulo": "Prueba 4B. Datos faltantes decisivos",
+        "texto": "Una aseguradora quiere modernizar su plataforma de reclamaciones con varios equipos internos y un proveedor externo de desarrollo. Todavía no se ha definido cuántos equipos participarán ni si la iniciativa se gestionará dentro del portafolio corporativo. Los equipos internos trabajan con Scrum."},
+}
 ESTADOS = ["Explícito", "Inferido", "Faltante"]
 COLORES = {"Nexus": "#3566c8", "LeSS": "#24875c", "SAFe": "#c4414f", "Disciplined Agile": "#7454b8"}
 
@@ -36,22 +44,6 @@ st.set_page_config(page_title="Asesor de Agilidad a Escala", page_icon="🧭", l
 @st.cache_data
 def reglas() -> dict:
     return motor.cargar_reglas(EXCEL)
-
-
-@st.cache_data
-def casos_referencia() -> dict:
-    """Fichas de referencia del equipo, leídas de las hojas de caso del Excel."""
-    wb = load_workbook(EXCEL, data_only=True)
-    casos = {}
-    for etiqueta, hoja in HOJAS_CASO.items():
-        ws = wb[hoja]
-        ficha = {}
-        for i, cid in enumerate(reglas()["criterios"]):
-            fila = motor.FILA_PLANTILLA_0 + i
-            ficha[cid] = {"valor": ws[f"F{fila}"].value, "estado": ws[f"G{fila}"].value,
-                          "evidencia": ws[f"E{fila}"].value or "", "supuesto": ws[f"H{fila}"].value or ""}
-        casos[etiqueta] = {"titulo": ws["A1"].value, "texto": ws["B2"].value, "ficha": ficha}
-    return casos
 
 
 def ficha_vacia() -> dict:
@@ -69,9 +61,9 @@ def cargar_en_estado(titulo: str, texto: str, ficha: dict, origen: str, exclusio
 
 
 if "ficha" not in st.session_state:
-    primero = next(iter(casos_referencia()))
-    c = casos_referencia()[primero]
-    cargar_en_estado(c["titulo"], c["texto"], c["ficha"], "Ficha de referencia del equipo")
+    primero = next(iter(CASOS))
+    c = CASOS[primero]
+    cargar_en_estado(c["titulo"], c["texto"], ficha_vacia(), "Ficha vacía")
     st.session_state.caso_sel = primero
 
 
@@ -185,15 +177,15 @@ izq, der = st.columns([1.25, 1], gap="large")
 
 with izq:
     st.subheader("Caso")
-    opciones = list(casos_referencia()) + ["Caso nuevo"]
+    opciones = list(CASOS) + ["Caso nuevo"]
     sel = st.radio("Casos del curso", opciones, horizontal=True, key="caso_sel", label_visibility="collapsed")
     if sel != st.session_state.get("caso_cargado"):
         st.session_state.caso_cargado = sel
         if sel == "Caso nuevo":
             cargar_en_estado("Caso nuevo", "", ficha_vacia(), "Ficha vacía")
         else:
-            c = casos_referencia()[sel]
-            cargar_en_estado(c["titulo"], c["texto"], c["ficha"], "Ficha de referencia del equipo")
+            c = CASOS[sel]
+            cargar_en_estado(c["titulo"], c["texto"], ficha_vacia(), "Ficha vacía")
     texto = st.text_area("Descripción del caso", key=f"texto_{st.session_state.version}",
                          value=st.session_state.texto, height=140,
                          placeholder="Número de equipos, productos, dependencias, regulación, portafolio, autonomía, tipos de trabajo…")
@@ -274,6 +266,15 @@ with izq:
                 st.session_state.excl.pop(m, None)
 
 # --------------------------------------------------------------------------- cálculo
+ficha_sin_datos = all(d["estado"] == "Faltante" and d["valor"] in (None, "") for d in st.session_state.ficha.values())
+if ficha_sin_datos:
+    with der:
+        st.markdown('<div class="veredicto" style="--c:#8C96AA"><div class="eyebrow">Sin evaluar</div>'
+                    '<div class="marco">Esperando la ficha</div></div>', unsafe_allow_html=True)
+        st.write("Pulse **Analizar con IA**: la IA leerá el caso, citará la evidencia de cada criterio y el motor "
+                 "calculará el resultado. También puede llenar los siete criterios a mano." if hay_ia else
+                 "Complete los siete criterios de la ficha a mano: el resultado se calcula al instante.")
+    st.stop()
 try:
     limpia = motor.normalizar_ficha(st.session_state.ficha, reglas())
     r = motor.calcular(limpia, reglas(), st.session_state.excl)

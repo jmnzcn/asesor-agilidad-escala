@@ -45,8 +45,8 @@ Sin clave de Gemini la app funciona igual en modo manual (ficha editable, cálcu
 5. **Deploy**. En 2–3 minutos queda en `https://asesor-agilidad-pf3872.streamlit.app`, abierta para cualquiera sin registrarse.
 
 ### 4. Probar antes de entregar
-1. Elegir **Caso 3 · Servicios profesionales**: la ficha de referencia del equipo da **Disciplined Agile 4,70**.
-2. Pulsar **Analizar con IA**: Gemini llena la ficha con evidencia citada; la recomendación debe seguir siendo DA (el puntaje puede variar si la IA deja algún criterio como faltante en vez de inferido).
+1. Elegir **Caso 3 · Servicios profesionales**: se carga solo el enunciado y la ficha queda vacía (la app no trae fichas ni resultados precargados).
+2. Pulsar **Analizar con IA**: Gemini llena la ficha con evidencia citada y el motor calcula. Lo esperable es Disciplined Agile (≈ 4,5–4,7 según cuántos criterios la IA deje como faltantes o inferidos).
 3. **Descargar Excel** y abrir la hoja *Caso_Evaluado*: los totales deben coincidir con la app.
 
 > Las apps gratuitas de Streamlit se «duermen» tras unos días sin visitas. Si el profesor ve el botón *Yes, get this app back up!*, basta pulsarlo y esperar unos segundos. Conviene abrirla el día antes de la revisión.
