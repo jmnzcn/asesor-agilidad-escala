@@ -178,6 +178,10 @@ def mensaje_error(e: Exception) -> str:
     if "429" in t or "RESOURCE_EXHAUSTED" in t:
         return ("La IA recibió demasiadas consultas en este minuto (límite del plan gratuito de Gemini). "
                 "Espere un minuto y vuelva a intentarlo, o llene la ficha a mano: el cálculo y el Excel funcionan igual.")
+    if "401" in t or "API key not valid" in t or "UNAUTHENTICATED" in t or "PERMISSION_DENIED" in t:
+        return ("La clave de IA de este despliegue no es válida o expiró, así que la lectura con IA no está disponible. "
+                "Llene la ficha a mano: el cálculo, los gráficos y el Excel funcionan igual. "
+                "(Administrador: cree una clave nueva en aistudio.google.com/apikey y actualícela en Settings › Secrets.)")
     return f"No se pudo completar la lectura con IA: {t}"
 
 
