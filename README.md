@@ -16,7 +16,7 @@ Sin clave de Gemini la app funciona igual en modo manual (ficha editable, cálcu
 | Archivo | Qué es |
 |---|---|
 | `app.py` | Interfaz Streamlit |
-| `motor_matriz.py` | Motor de cálculo (el mismo verificado contra las 5 hojas de caso del Excel) |
+| `motor_matriz.py` | Motor de cálculo (verificado contra las fórmulas del Excel con las fichas de los 5 casos de prueba) |
 | `Matriz_Decision_Agilidad_Escala.xlsx` | Fuente única de reglas |
 | `requirements.txt` | Dependencias |
 | `.streamlit/secrets.toml.example` | Plantilla para la clave de Gemini |
