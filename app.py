@@ -149,7 +149,10 @@ def prompt_extraccion(texto: str) -> str:
             "Tu única tarea es LEER el caso y llenar la ficha de captura; no calcules ni recomiendes.\n\n"
             "CRITERIOS:\n" + reglas_para_prompt() + "\n\nDISPARADOR DE CADA NIVEL (copia el nombre exacto):\n" + niveles +
             "\n\nESTADOS: \"Explícito\" (el caso lo dice), \"Inferido\" (evidencia indirecta; escribe el supuesto), "
-            "\"Faltante\" (no hay base; valor null). No inventes datos. Si el caso declara algo que impide un marco "
+            "\"Faltante\" (no hay base; valor null). No inventes datos.\n\n"
+            "INFERENCIAS (R8): infiere solo si el caso da evidencia indirecta, y escribe el supuesto. Que el caso no mencione dependencias, portafolio u otro dato no demuestra que sea bajo: déjalo Faltante. Tener un proveedor externo no basta, por sí solo, para marcar dependencias Altas. \n\n"
+            "ACLARACIONES: si el caso incluye una aclaración del cliente, úsala solo en lo que aporte datos concretos. Si dice que no sabe o no responde un punto, ese criterio queda Faltante; no lo completes con un supuesto. \n\n"
+            "Si el caso declara algo que impide un marco "
             "(p. ej. que no se usará Scrum), ponlo en exclusiones con la frase citada.\n\n"
             "Responde solo con JSON: {\"ficha\":{\"C1\":{\"valor\":12,\"estado\":\"Explícito\",\"evidencia\":\"«cita»\",\"supuesto\":\"\"}, "
             "... \"C7\":{...}}, \"exclusiones\":{\"<marco>\":\"«cita»\"}}\n\nCASO:\n" + texto[:6000])
