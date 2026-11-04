@@ -392,6 +392,13 @@ def exportar_excel(ficha: dict, reglas: dict, ruta_salida: str, titulo: str, des
         ws[f"D{fila_res + k}"] = "Sí" if motivo else "No"
         ws[f"E{fila_res + k}"] = motivo or None
     ws.title = "Caso_Evaluado"
+    # openpyxl no actualiza las fórmulas al renombrar: la hoja Escenarios (R7) apunta a 'Plantilla'
+    # y sin este ajuste la robustez del Excel quedaría calculada sobre una hoja inexistente.
+    for hoja in wb.worksheets:
+        for fila in hoja.iter_rows():
+            for celda in fila:
+                if isinstance(celda.value, str) and celda.value.startswith("=") and "Plantilla" in celda.value:
+                    celda.value = celda.value.replace("'Plantilla'!", "'Caso_Evaluado'!").replace("Plantilla!", "'Caso_Evaluado'!")
     wb.move_sheet("Caso_Evaluado", offset=-(wb.sheetnames.index("Caso_Evaluado") - 1))
     wb.active = 1
     for hoja in wb.worksheets:
