@@ -77,6 +77,8 @@ La aplicación no guarda fichas ni resultados de los casos: solo el texto del en
 
 Versión 2026-11-03-r2. La robustez (R7) recorre las combinaciones de datos faltantes y reaplica exclusiones y desempates; una segunda revisión varía también los niveles inferidos. La bitácora JSON guarda la ficha completa, las exclusiones, el prompt y la respuesta de la IA, la temperatura, la versión y la huella SHA-256 de la matriz. Cuando la brecha es negativa, la recomendación fue elegida por el desempate R6. La hoja Escenarios del Excel permite revisar esa decisión sin ejecutar Python.
 
+El 04/11/2026 se corrigió el texto de la hoja Instrucciones del Excel (evaluar cada caso en una copia del archivo, no en una hoja duplicada). Las reglas no cambiaron, pero la huella SHA-256 del archivo sí; el detalle está en `Evidencia/cambio_huella_matriz.json` de la carpeta del trabajo.
+
 ## Publicar una copia propia (opcional)
 
 1. Cree un repositorio en GitHub con el contenido de esta carpeta. **No** suba `secrets.toml`.
