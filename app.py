@@ -216,7 +216,9 @@ def prompt_justificacion(texto: str, r: dict) -> str:
             "3) Riesgos de adopción ligados a hechos del caso y una recomendación práctica concreta para esta organización.\n"
             + final + "\n"
             "Reglas: no inventes datos, áreas, cifras ni supuestos que no estén en el caso o en la FICHA; evita frases genéricas "
-            "que servirían para cualquier organización; usa los nombres que usa el caso (productos, áreas, proveedores, comités)."
+            "que servirían para cualquier organización; usa los nombres que usa el caso (productos, áreas, proveedores, comités). "
+            "Cada vez que menciones un criterio, escribe su código entre paréntesis, por ejemplo «dependencias con red y proveedores (C3)» "
+            "o «18 equipos (C1)», también en los supuestos y en las preguntas, para que el lector ubique cada argumento en la matriz."
             "\n\nRESULTADO:\n" + resumen(r) + "\n\nCASO:\n" + (texto or "")[:4000])
 
 
