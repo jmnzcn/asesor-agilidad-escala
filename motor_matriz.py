@@ -22,11 +22,14 @@ Uso desde el agente (Code Interpreter):
 from __future__ import annotations
 
 import glob
+import hashlib
+import itertools
 import os
 import unicodedata
 
 from openpyxl import load_workbook
 
+VERSION_REGLAS = "2026-11-03-r2"
 MARCOS = ["Nexus", "LeSS", "SAFe", "Disciplined Agile"]
 CORTO = {"Nexus": "Nexus", "LeSS": "LeSS", "SAFe": "SAFe", "Disciplined Agile": "DA"}
 # Regla R6 (c): parsimonia, mayor = más liviano de adoptar.
@@ -92,7 +95,8 @@ def cargar_reglas(ruta_excel: str | None = None) -> dict:
         fila += 1
 
     return {"ruta": ruta, "criterios": criterios,
-            "umbral_empate": float(wd["B4"].value), "neutro": float(wd["B5"].value)}
+            "umbral_empate": float(wd["B4"].value), "neutro": float(wd["B5"].value), "version": VERSION_REGLAS,
+            "sha256": hashlib.sha256(open(ruta, "rb").read()).hexdigest()}
 
 
 def banda_equipos(n: int) -> str:
@@ -119,7 +123,10 @@ def normalizar_ficha(ficha: dict, reglas: dict) -> dict:
         if estado != "Faltante":
             if cid == "C1":
                 try:
-                    valor = int(float(valor))
+                    numero = float(valor)
+                    if not numero.is_integer():
+                        raise ValueError
+                    valor = int(numero)
                     if valor < 1:
                         raise ValueError
                     nivel = banda_equipos(valor)
@@ -138,6 +145,38 @@ def normalizar_ficha(ficha: dict, reglas: dict) -> dict:
     if errores:
         raise ValueError("Ficha inválida:\n- " + "\n- ".join(errores))
     return limpia
+
+
+def escenarios_posibles(ficha, reglas, exclusiones=None, incluir_inferidos=False):
+    """Reaplica exclusiones y desempates a cada combinación admitida por la ficha."""
+    criterios = reglas["criterios"]
+    ids = list(criterios)
+    opciones = [list(c["niveles"]) if ficha[cid]["estado"] == "Faltante" or
+                (incluir_inferidos and ficha[cid]["estado"] == "Inferido")
+                else [ficha[cid]["nivel"]] for cid, c in criterios.items()]
+    conteos = {m: 0 for m in MARCOS}
+    conteos["Ninguno compatible"] = 0
+    ejemplos = {}
+    total = 0
+    for niveles in itertools.product(*opciones):
+        total += 1
+        puntos = {cid: criterios[cid]["niveles"][nivel] for cid, nivel in zip(ids, niveles)}
+        elegibles = [m for m in MARCOS if not (exclusiones or {}).get(m) and
+                     not any(c["excluyente"] and puntos[cid][m] == 0 for cid, c in criterios.items())]
+        ganador = "Ninguno compatible"
+        if elegibles:
+            totales = {m: round(sum(c["peso"] * puntos[cid][m] for cid, c in criterios.items()), 6)
+                       for m in elegibles}
+            maximo = max(totales.values())
+            empatados = [m for m in elegibles if round(totales[m], 4) >= round(maximo - reglas["umbral_empate"], 4)]
+            def clave(m):
+                return (-sum(puntos[cid][m] <= 1 for cid in ids),
+                        round(sum(c["peso"] * puntos[cid][m] for cid, c in criterios.items() if c["excluyente"]), 6),
+                        PARSIMONIA[m])
+            ganador = max(empatados, key=clave)
+        conteos[ganador] += 1
+        ejemplos.setdefault(ganador, dict(zip(ids, niveles)))
+    return {"total": total, "ganadores": {m: n for m, n in conteos.items() if n}, "ejemplos": ejemplos}
 
 
 # --------------------------------------------------------------------------- cálculo
@@ -203,12 +242,16 @@ def calcular(ficha: dict, reglas: dict, exclusiones: dict | None = None) -> dict
             ajuste += f["peso"] * min(p[rec] - p[x] for p in niveles)
         peor[x] = {"brecha": totales[rec] - totales[x], "ajuste": ajuste,
                    "peor": round(totales[rec] - totales[x] + ajuste, 6)}
-    if not faltantes:
-        robustez = "Robusta: no hay datos faltantes"
-    elif any(v["peor"] <= 0 for v in peor.values()):
-        robustez = "SENSIBLE: los datos faltantes pueden cambiar la recomendación; se requiere aclaración"
+    escenarios = escenarios_posibles(ficha, reglas, exclusiones)
+    incertidumbre = escenarios_posibles(ficha, reglas, exclusiones, incluir_inferidos=True)
+    cambia = any(m != rec for m in escenarios["ganadores"])
+    if cambia:
+        robustez = "SENSIBLE: al completar los datos faltantes puede cambiar la recomendación; solicitar aclaración"
     else:
-        robustez = "Robusta: ningún valor posible de los datos faltantes cambia la recomendación"
+        robustez = "Robusta ante los datos faltantes, bajo los supuestos registrados"
+    aviso_inferencias = ("Las inferencias pueden cambiar la recomendación; confirmar antes de adoptar el marco"
+                         if any(m != rec for m in incertidumbre["ganadores"]) else
+                         "La recomendación se mantiene al variar los niveles inferidos y faltantes")
 
     aportes_vs = []
     if segundo:
@@ -222,7 +265,9 @@ def calcular(ficha: dict, reglas: dict, exclusiones: dict | None = None) -> dict
         recomendacion=rec, segundo=segundo,
         brecha=round(totales[rec] - totales[segundo], 6) if segundo else None,
         empate=len(en_empate) > 1, en_empate=en_empate, riesgo=riesgo, estructural=estructural,
-        robustez=robustez, peor_brecha=peor, aportes_vs_segundo=aportes_vs,
+        robustez=robustez, peor_brecha=peor, escenarios=escenarios, incertidumbre=incertidumbre,
+        aviso_inferencias=aviso_inferencias, version_reglas=reglas.get("version", VERSION_REGLAS),
+        sha256_reglas=reglas.get("sha256"), aportes_vs_segundo=aportes_vs,
         riesgos=[(f["id"], f["criterio"], f["puntos"][rec]) for f in filas
                  if f["estado"] != "Faltante" and f["puntos"][rec] <= 2],
         faltantes=[f["id"] for f in faltantes])
@@ -270,7 +315,10 @@ def reporte_markdown(r: dict) -> str:
     else:
         L.append(f"- Empate técnico: No (umbral {_fmt(r['umbral'])}).")
 
-    L += ["", "### 5. Robustez ante datos faltantes (R7)", f"**{r['robustez']}**"]
+    L += ["", "### 5. Robustez ante datos faltantes (R7)", f"**{r['robustez']}**",
+          f"Combinaciones de datos faltantes evaluadas: {r['escenarios']['total']}. Ganadores: {r['escenarios']['ganadores']}.",
+          r['aviso_inferencias'],
+          "Las brechas siguientes describen diferencias de puntaje; la decisión se verifica reaplicando exclusiones y desempates."]
     if r["faltantes"]:
         L.append(f"Criterios faltantes: {', '.join(r['faltantes'])} (puntaje neutro 2,5).")
         L += ["", "| Competidor | Brecha actual | Ajuste peor caso | Brecha en peor caso |", "|---|---|---|---|"]
@@ -348,6 +396,9 @@ def exportar_excel(ficha: dict, reglas: dict, ruta_salida: str, titulo: str, des
     wb.active = 1
     for hoja in wb.worksheets:
         hoja.sheet_view.tabSelected = hoja.title == "Caso_Evaluado"
+    if wb.calculation is None:  # la matriz r2 no trae calcPr
+        from openpyxl.workbook.properties import CalcProperties
+        wb.calculation = CalcProperties()
     wb.calculation.fullCalcOnLoad = True  # Excel recalcula todas las fórmulas al abrir
     wb.save(ruta_salida)
     return ruta_salida

@@ -60,3 +60,9 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 Para usar la IA localmente, copie `.streamlit/secrets.toml.example` como `.streamlit/secrets.toml` y ponga su clave.
+
+## Revisión del mecanismo
+
+Versión de reglas: 2026-11-03-r2. La robustez recorre las combinaciones de datos faltantes y reaplica exclusiones y desempates. Una segunda revisión permite variar también las inferencias. La bitácora JSON guarda la ficha completa, las exclusiones, el prompt y la respuesta de la IA, la temperatura, la versión y la huella SHA-256 de la matriz. El CSV es solo un resumen.
+
+El resultado descargado se calcula con la misma matriz. Cuando la brecha es negativa, la recomendación fue elegida por el desempate R6. La hoja Escenarios permite revisar esa decisión sin ejecutar Python.

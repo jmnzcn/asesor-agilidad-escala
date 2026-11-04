@@ -310,7 +310,7 @@ def robustez(r: dict, criterios: dict, tema: str = "oscuro") -> str:
             decide = red >= lim - 1e-9
             tip = (f"{f['id']} {f['criterio']} ({f['estado']}, hoy: {f['nivel']})\nSi fuera «{nivel}», la ventaja de {rec} "
                    f"sobre {x} bajaría {motor._fmt(red)} (ventaja actual {motor._fmt(lim)})"
-                   + ("\nPor sí solo puede cambiar la recomendación" if decide else ""))
+                   + ("\nPuede acercar el empate; verificar con R6 y las exclusiones" if decide else ""))
             filas2.append(
                 f'<div class="fila tip" data-tip="{_q(tip)}"><div class="nom">{f["id"]} {escape(CORTO_CRIT.get(f["id"], f["criterio"]))}'
                 + (' <span class="chip w">decisivo</span>' if decide else "")
@@ -320,7 +320,7 @@ def robustez(r: dict, criterios: dict, tema: str = "oscuro") -> str:
                 f'<div class="val chico">−{motor._fmt(red)}<small>vs {escape(motor.CORTO[x])}</small></div></div>')
         parte2 = ('<h4 style="margin-top:16px">Qué dato decide</h4>'
                   '<p class="nota">Cuánto podría bajar la ventaja si un dato faltante o inferido resultara en su nivel menos favorable. '
-                  "La línea discontinua es la ventaja actual sobre ese marco: si la barra la alcanza, ese dato por sí solo puede cambiar la recomendación. "
+                  "La línea discontinua es la ventaja actual sobre ese marco: si la barra la alcanza, ese dato puede acercar el empate; debe verificarse con R6 y las exclusiones. "
                   "Son los datos que conviene preguntar primero.</p>" + "".join(filas2))
     else:
         parte2 = ('<h4 style="margin-top:16px">Qué dato decide</h4><p class="nota">Ningún dato faltante o inferido puede reducir la ventaja: '

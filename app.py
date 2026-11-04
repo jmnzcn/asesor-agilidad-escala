@@ -50,6 +50,15 @@ def reglas() -> dict:
     return motor.cargar_reglas(EXCEL)
 
 
+@st.cache_data(max_entries=20, show_spinner="Preparando el Excel de auditoría…")
+def excel_auditoria(ficha_json: str, titulo: str, texto: str, excl_json: str) -> bytes:
+    """Genera el Excel solo cuando cambia la ficha: la matriz pesa 1,6 MB y abrirla tarda unos segundos."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ruta = motor.exportar_excel(json.loads(ficha_json), reglas(), os.path.join(tmp, "m.xlsx"), titulo, texto,
+                                    json.loads(excl_json))
+        return Path(ruta).read_bytes()
+
+
 def ficha_vacia() -> dict:
     return {cid: {"valor": None, "estado": "Faltante", "evidencia": "", "supuesto": ""} for cid in reglas()["criterios"]}
 
@@ -261,6 +270,10 @@ def registrar(r: dict, limpia: dict):
     b.append({"n": len(b) + 1, "hora": ahora(), "caso": st.session_state.titulo, "texto": st.session_state.texto,
               "origen": st.session_state.origen, "modelo": ia.get("modelo", "manual (sin IA)"),
               "justificacion": st.session_state.justificacion, "exclusiones": dict(st.session_state.excl),
+              "version_reglas": reglas().get("version"), "sha256_reglas": reglas().get("sha256"),
+              "temperatura": ia.get("temperatura"), "prompt": ia.get("prompt"),
+              "respuesta_ia": ia.get("respuesta"), "ficha": limpia,
+              "escenarios": r.get("escenarios"), "incertidumbre": r.get("incertidumbre"),
               "firma": f, **instantanea(r)})
 
 
@@ -357,6 +370,11 @@ st.markdown('<div class="eyebrow">PF-3872 Metodologías Ágiles · UCR · Matriz
 st.title("Asesor de Agilidad a Escala")
 st.caption("La IA lee el caso y llena la ficha → un motor de reglas calcula con la matriz del equipo (R1–R9) → "
            "el Excel descargable permite auditar cada número.")
+st.info(
+    "**Usted elige, al inicio:** un caso del curso, o «Caso nuevo», y pulsa **Analizar con IA**.\n\n"
+    "**Usted no llena C1, C2 ni los demás al inicio.** Esos cuadros los completa la IA con el nivel de la matriz. "
+    "El equipo revisa esa lectura; cuándo se edita a mano se explica en la ficha de captura."
+)
 
 hay_ia = _secretos_ok()
 izq, der = st.columns([1.25, 1], gap="large")
@@ -395,8 +413,18 @@ with izq:
                 "Complete la ficha a mano: el cálculo y el Excel funcionan igual.")
 
     st.subheader("Ficha de captura")
-    st.caption(f"Origen: **{st.session_state.origen}** · Explícito: el caso lo dice · Inferido: se deduce (anote el supuesto) · "
-               "Faltante: sin datos, 2,5 para los cuatro marcos.")
+    st.info(
+        "**Qué se hace aquí: la IA llena esta ficha y el equipo la revisa.**\n\n"
+        "- **Normalmente no se llena nada.** Al pulsar **Analizar con IA**, cada criterio recibe su nivel, su estado, "
+        "la frase del caso que lo respalda y el supuesto. El equipo la **lee críticamente** (¿la evidencia justifica el nivel? "
+        "¿el estado es correcto?) y anota las diferencias como observación, sin cambiar nada.\n"
+        "- **Se edita a mano solo en tres casos:** (1) no hay IA disponible; (2) para comparar la lectura del equipo con la del "
+        "agente, **después** de registrar la ejecución original; (3) para probar qué pasa si cambia un dato. "
+        "Esas corridas no son del agente: regístrelas como *ficha corregida por el equipo*.\n"
+        "- **Para responder las preguntas del agente no se edita la ficha:** use «Su respuesta a las preguntas del agente».\n\n"
+        "Explícito: el caso lo dice · Inferido: se deduce (con supuesto) · Faltante: sin datos, vale 2,5 para los cuatro marcos."
+    )
+    st.caption(f"Origen de la ficha actual: **{st.session_state.origen}**.")
     v = st.session_state.version
     for cid, c in reglas()["criterios"].items():
         d = st.session_state.ficha[cid]
@@ -435,9 +463,8 @@ if ficha_sin_datos:
     with der:
         st.markdown('<div class="veredicto" style="--c:#8C96AA"><div class="eyebrow">Sin evaluar</div>'
                     '<div class="marco">Esperando la ficha</div></div>', unsafe_allow_html=True)
-        st.write("Pulse **Analizar con IA**: la IA leerá el caso, citará la evidencia de cada criterio y el motor "
-                 "calculará el resultado. También puede llenar los siete criterios a mano." if hay_ia else
-                 "Complete los siete criterios de la ficha a mano: el resultado se calcula al instante.")
+        st.write("Elija el caso y pulse **Analizar con IA**. C1 a C7 se llenan solos: no hace falta elegir un nivel antes." if hay_ia else
+                 "La lectura con IA no está disponible. En ese caso sí se completan C1 a C7 a mano y el resultado se calcula al instante.")
     panel_bitacora()
     st.stop()
 try:
@@ -452,6 +479,7 @@ if r:
     with der:
         if r["recomendacion"]:
             sensible = r["robustez"].startswith("SENSIBLE")
+            st.caption(r["robustez"] + ". " + r.get("aviso_inferencias", ""))
             pills = (f'<span class="pill {"warn" if sensible else "ok"}">{"Sensible: provisional" if sensible else "Robusta"}</span>'
                      + ('<span class="pill ok">Empate resuelto por R6</span>' if r["empate"] else ""))
             seg = (f" · 2.º {r['segundo']} {motor._fmt(r['totales'][r['segundo']])} · brecha {motor._fmt(r['brecha'])}"
@@ -553,10 +581,8 @@ if r:
                     st.code(ia["prompt_justificacion"], language="markdown", wrap_lines=True)
 
         st.subheader("Auditoría")
-        with tempfile.TemporaryDirectory() as tmp:
-            ruta = motor.exportar_excel(limpia, reglas(), os.path.join(tmp, "m.xlsx"), st.session_state.titulo,
-                                        st.session_state.texto, st.session_state.excl)
-            datos_xlsx = Path(ruta).read_bytes()
+        datos_xlsx = excel_auditoria(json.dumps(limpia, ensure_ascii=False, sort_keys=True), st.session_state.titulo,
+                                     st.session_state.texto, json.dumps(st.session_state.excl, ensure_ascii=False, sort_keys=True))
         base = motor._nombre_archivo(st.session_state.titulo)
         st.download_button("Descargar Excel para auditar", datos_xlsx, file_name=f"Matriz_{base}.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
@@ -588,6 +614,7 @@ if r:
         excl_txt += [f"**{m}** excluido (R4): {r['excl_manual'][m]}" for m in motor.MARCOS if m in r["excl_manual"]]
         st.markdown("**Restricciones críticas:** " + ("; ".join(excl_txt) if excl_txt else "ninguna, los cuatro marcos son elegibles."))
         st.markdown(f"**Robustez (R7):** {r['robustez']}")
+        st.caption(f"Combinaciones de faltantes: {r.get('escenarios', {}).get('total', 0)}. " + r.get("aviso_inferencias", ""))
         if r.get("faltantes"):
             st.dataframe(pd.DataFrame([{"Competidor": x, "Brecha actual": motor._fmt(v["brecha"]),
                                         "Ajuste peor caso": motor._fmt(v["ajuste"]), "Brecha peor caso": motor._fmt(v["peor"])}
@@ -599,7 +626,7 @@ with st.expander("Reglas de decisión de la matriz"):
         "- **R3 Exclusión automática:** compatibilidad 0 en un criterio excluyente (C1, C2, C7) con dato explícito o inferido.\n"
         "- **R4 Exclusión manual:** restricción declarada en el caso.\n"
         "- **R6 Empate técnico (≤ 0,10):** menos criterios con compatibilidad ≤ 1; luego mayor puntaje en C1+C2+C7; luego el marco más liviano.\n"
-        "- **R7 Robustez:** brecha actual + Σ peso × menor diferencia posible en cada criterio faltante; si alguna queda ≤ 0, la recomendación es sensible.\n\n"
+        "- **R7 Robustez:** se recorren los niveles faltantes y se reaplican exclusiones y desempates; si cambia el marco, la recomendación es sensible. Las inferencias se revisan aparte.\n\n"
         "Pesos, niveles y puntajes se leen de `Matriz_Decision_Agilidad_Escala.xlsx`.")
 
 panel_bitacora()
