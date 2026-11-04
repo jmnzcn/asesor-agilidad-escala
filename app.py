@@ -128,8 +128,9 @@ def reglas_para_prompt() -> str:
     return "\n".join(L)
 
 
+@st.cache_data
 def disparadores() -> dict:
-    """Texto del disparador de cada nivel, leído del Excel."""
+    """Texto del disparador de cada nivel, leído del Excel una sola vez (abrir la matriz tarda unos 2 s)."""
     wb = load_workbook(EXCEL, data_only=True)
     wr = wb["2_Escalas_Reglas"]
     out, fila = {}, motor.FILA_REGLA_0
