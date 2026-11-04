@@ -1,68 +1,85 @@
 # Asesor de Agilidad a Escala (Streamlit + Gemini)
 
-Agente que recomienda **Nexus, LeSS, SAFe o Disciplined Agile** con la matriz de decisión del equipo (PF-3872, UCR).
+Agente que recomienda **Nexus, LeSS, SAFe o Disciplined Agile** con la matriz de decisión del equipo (PF-3872, UCR). La IA lee el caso y llena la ficha; un motor de reglas calcula con la matriz; el Excel descargable permite auditar cada número.
 
-- **Interpretar:** Gemini lee el caso, cita la evidencia y llena la ficha de captura (nivel + estado por criterio).
-- **Calcular:** `motor_matriz.py` aplica las reglas R1–R9 con pesos, niveles y puntajes leídos de `Matriz_Decision_Agilidad_Escala.xlsx`.
-- **Auditar:** el botón «Descargar Excel» entrega la matriz con la hoja *Caso_Evaluado* llena; Excel recalcula y muestra los mismos totales.
-- **Aclarar:** si faltan datos, el usuario responde las preguntas del agente en «Responder al agente»; la IA relee el caso y la app muestra el resultado antes y después.
-- **Registrar y comparar:** cada análisis queda en la *Bitácora de ejecuciones* (descargable en CSV o JSON); dos ejecuciones se comparan lado a lado con el aporte que cambió en cada criterio.
-- **Transparencia:** el panel «Transparencia del agente» muestra el modelo, la respuesta JSON de la IA y las instrucciones que recibió.
+## Cómo probarlo
 
-Sin clave de Gemini la app funciona igual en modo manual (ficha editable, cálculo, gráfico y Excel).
+Hay tres formas, de la más sencilla a la más completa.
+
+### 1. En línea, sin instalar nada
+
+1. Abra **https://asesor-agilidad-pf3872.streamlit.app/**. No pide cuenta.
+2. Elija un caso del curso o **Caso nuevo** y escriba o pegue la descripción de una organización.
+3. Pulse **Analizar con IA**. La ficha se llena, el motor calcula y aparece la recomendación.
+4. Pulse **Descargar Excel para auditar** y abra la hoja *Caso_Evaluado*: Excel recalcula con sus fórmulas y debe mostrar los mismos totales.
+
+> La aplicación gratuita se suspende tras varios días sin visitas. Si aparece *Yes, get this app back up!*, púlselo y espere unos segundos.
+
+### 2. En su computadora
+
+**Requisito:** Python 3.10 o superior (https://www.python.org/downloads/). En Windows, marque *Add python.exe to PATH* al instalarlo.
+
+**Obtener el código**, de cualquiera de estas formas:
+
+- Con git:
+  ```bash
+  git clone https://github.com/jmnzcn/asesor-agilidad-escala.git
+  cd asesor-agilidad-escala
+  ```
+- Sin git: en GitHub, **Code › Download ZIP** y descomprima; o descargue la carpeta `App_Streamlit` de la carpeta del trabajo en Google Drive. Abra una terminal dentro de esa carpeta.
+
+**Instalar y ejecutar** (en la carpeta que contiene `app.py`):
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+El navegador se abre en `http://localhost:8501`. Para detener la aplicación, presione `Ctrl+C` en la terminal.
+
+**Sin clave de Gemini** la aplicación funciona en modo manual: usted elige el nivel y el estado de cada criterio y el cálculo, los gráficos y el Excel funcionan igual. **Para usar la IA**, necesita una clave propia y gratuita:
+
+1. Créela en **https://aistudio.google.com/apikey** con una cuenta de Google.
+2. Copie `.streamlit/secrets.toml.example` como `.streamlit/secrets.toml` y pegue la clave en `GEMINI_API_KEY`.
+3. Vuelva a ejecutar `streamlit run app.py`.
+
+La clave queda solo en su computadora: `secrets.toml` está excluido del repositorio y no debe compartirse.
+
+### 3. Solo con Excel, sin el agente
+
+Guarde una copia de `Matriz_Decision_Agilidad_Escala.xlsx` con otro nombre (Archivo › Guardar como) y, en esa copia, llene directamente la hoja **Plantilla**: el nombre y la descripción del caso, y el nivel y el estado de cada criterio. La hoja calcula los totales, las exclusiones, el desempate y la robustez con sus propias fórmulas.
+
+No duplique la hoja dentro del libro: la comprobación de robustez (hoja Escenarios) lee la hoja Plantilla, así que en una hoja duplicada la celda de R7 no sería correcta. Para evaluar otro caso, guarde otra copia del archivo.
+
+## Qué hace la aplicación
+
+- **Interpretar:** Gemini lee el caso, cita la evidencia y llena la ficha de captura (nivel y estado por criterio). Si el caso no dice algo, el criterio queda faltante.
+- **Calcular:** `motor_matriz.py` aplica las reglas R1 a R9 con los pesos, niveles y puntajes que lee de `Matriz_Decision_Agilidad_Escala.xlsx`. La IA no hace las cuentas.
+- **Auditar:** el Excel descargable trae la matriz con la hoja *Caso_Evaluado* llena.
+- **Aclarar:** si faltan datos decisivos, el resultado sale provisional y el usuario responde las preguntas del agente en «Responder al agente»; la IA relee el caso y la aplicación muestra el resultado antes y después.
+- **Registrar y comparar:** cada análisis queda en la *Bitácora de ejecuciones* (descargable en CSV o JSON) y dos ejecuciones se comparan lado a lado.
+- **Transparencia:** la sección «Transparencia del agente» muestra el modelo, la hora, la respuesta JSON de la IA y las instrucciones que recibió.
+
+La aplicación no guarda fichas ni resultados de los casos: solo el texto del enunciado. Cada análisis se genera en el momento.
 
 ## Archivos
 
 | Archivo | Qué es |
 |---|---|
-| `app.py` | Interfaz Streamlit |
-| `motor_matriz.py` | Motor de cálculo (verificado contra las fórmulas del Excel con las fichas de los 5 casos de prueba) |
-| `Matriz_Decision_Agilidad_Escala.xlsx` | Fuente única de reglas |
-| `requirements.txt` | Dependencias |
+| `app.py` | Interfaz Streamlit y llamadas a la IA |
+| `motor_matriz.py` | Motor de cálculo; lee todas las reglas del Excel |
+| `graficos.py` | Gráficos del resultado |
+| `Matriz_Decision_Agilidad_Escala.xlsx` | Fuente única de criterios, pesos, niveles y puntajes |
+| `requirements.txt` | Dependencias de Python |
 | `.streamlit/secrets.toml.example` | Plantilla para la clave de Gemini |
 
-## Publicarla gratis (≈ 15 minutos)
+## Versión de las reglas
 
-### 1. Clave de Gemini (gratis)
-1. Entrar a **https://aistudio.google.com/apikey** con una cuenta de Google.
-2. **Create API key** y copiarla. No la comparta ni la suba a GitHub.
+Versión 2026-11-03-r2. La robustez (R7) recorre las combinaciones de datos faltantes y reaplica exclusiones y desempates; una segunda revisión varía también los niveles inferidos. La bitácora JSON guarda la ficha completa, las exclusiones, el prompt y la respuesta de la IA, la temperatura, la versión y la huella SHA-256 de la matriz. Cuando la brecha es negativa, la recomendación fue elegida por el desempate R6. La hoja Escenarios del Excel permite revisar esa decisión sin ejecutar Python.
 
-### 2. Repositorio en GitHub
-1. En **github.com › New repository**: nombre `asesor-agilidad-escala`, **Public**, sin README.
-2. Subir el contenido de esta carpeta (`App_Streamlit`): en el repositorio vacío, *uploading an existing file* y arrastrar `app.py`, `motor_matriz.py`, `Matriz_Decision_Agilidad_Escala.xlsx`, `requirements.txt`, `README.md` y `.gitignore`. **No** suba `secrets.toml`.
+## Publicar una copia propia (opcional)
 
-   O desde una terminal en esta carpeta:
-   ```bash
-   git init && git add . && git commit -m "Asesor de Agilidad a Escala" && git branch -M main
-   git remote add origin https://github.com/<su-usuario>/asesor-agilidad-escala.git && git push -u origin main
-   ```
-
-### 3. Streamlit Community Cloud
-1. Entrar a **https://share.streamlit.io** › *Continue with GitHub* y autorizar.
-2. **Create app › Deploy a public app from GitHub**: repositorio `asesor-agilidad-escala`, rama `main`, archivo `app.py`.
-3. *App URL*: elegir algo como `asesor-agilidad-pf3872`.
-4. **Advanced settings › Secrets**: pegar
-   ```toml
-   GEMINI_API_KEY = "su-clave"
-   ```
-5. **Deploy**. En 2–3 minutos queda en `https://asesor-agilidad-pf3872.streamlit.app`, abierta para cualquiera sin registrarse.
-
-### 4. Probar antes de entregar
-1. Elegir **Caso 3 · Servicios profesionales**: se carga solo el enunciado y la ficha queda vacía (la app no trae fichas ni resultados precargados).
-2. Pulsar **Analizar con IA**: Gemini llena la ficha con evidencia citada y el motor calcula. Lo esperable es Disciplined Agile (≈ 4,5–4,7 según cuántos criterios la IA deje como faltantes o inferidos).
-3. **Descargar Excel** y abrir la hoja *Caso_Evaluado*: los totales deben coincidir con la app.
-
-> Las apps gratuitas de Streamlit se «duermen» tras unos días sin visitas. Si el profesor ve el botón *Yes, get this app back up!*, basta pulsarlo y esperar unos segundos. Conviene abrirla el día antes de la revisión.
-
-## Ejecutar en la computadora
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-Para usar la IA localmente, copie `.streamlit/secrets.toml.example` como `.streamlit/secrets.toml` y ponga su clave.
-
-## Revisión del mecanismo
-
-Versión de reglas: 2026-11-03-r2. La robustez recorre las combinaciones de datos faltantes y reaplica exclusiones y desempates. Una segunda revisión permite variar también las inferencias. La bitácora JSON guarda la ficha completa, las exclusiones, el prompt y la respuesta de la IA, la temperatura, la versión y la huella SHA-256 de la matriz. El CSV es solo un resumen.
-
-El resultado descargado se calcula con la misma matriz. Cuando la brecha es negativa, la recomendación fue elegida por el desempate R6. La hoja Escenarios permite revisar esa decisión sin ejecutar Python.
+1. Cree un repositorio en GitHub con el contenido de esta carpeta. **No** suba `secrets.toml`.
+2. En **https://share.streamlit.io**, *Create app › Deploy a public app from GitHub*: elija el repositorio, la rama `main` y el archivo `app.py`.
+3. En **Advanced settings › Secrets**, pegue `GEMINI_API_KEY = "su-clave"`.
+4. Pulse **Deploy**. En pocos minutos queda publicada con un enlace abierto, sin registro.
