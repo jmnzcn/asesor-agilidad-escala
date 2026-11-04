@@ -150,7 +150,7 @@ def prompt_extraccion(texto: str) -> str:
             "CRITERIOS:\n" + reglas_para_prompt() + "\n\nDISPARADOR DE CADA NIVEL (copia el nombre exacto):\n" + niveles +
             "\n\nESTADOS: \"Explícito\" (el caso lo dice), \"Inferido\" (evidencia indirecta; escribe el supuesto), "
             "\"Faltante\" (no hay base; valor null). No inventes datos.\n\n"
-            "INFERENCIAS (R8): infiere solo si el caso da evidencia indirecta, y escribe el supuesto. Que el caso no mencione dependencias, portafolio u otro dato no demuestra que sea bajo: déjalo Faltante. Tener un proveedor externo no basta, por sí solo, para marcar dependencias Altas. \n\n"
+            "INFERENCIAS (R8): infiere solo si el caso da evidencia indirecta, y escribe el supuesto. Que el caso no mencione dependencias, portafolio u otro dato no demuestra que sea bajo: déjalo Faltante. Tener un proveedor externo no basta, por sí solo, para marcar dependencias Altas: C3 «Altas» exige que el caso mencione dependencias entre soluciones o con áreas transversales (arquitectura, datos, seguridad, operaciones) o planificación sincronizada. Si la única base es que hay varios equipos o un proveedor, deja C3 Faltante. \n\n"
             "ACLARACIONES: si el caso incluye una aclaración del cliente, úsala solo en lo que aporte datos concretos. Si dice que no sabe o no responde un punto, ese criterio queda Faltante; no lo completes con un supuesto. \n\n"
             "Si el caso declara algo que impide un marco "
             "(p. ej. que no se usará Scrum), ponlo en exclusiones con la frase citada.\n\n"
