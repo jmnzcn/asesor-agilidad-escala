@@ -171,18 +171,52 @@ def resumen(r: dict) -> str:
     L.append("Criterios que más separan: " + "; ".join(f"{c} {n} {motor._fmt(d)}" for c, n, d in r["aportes_vs_segundo"][:4]))
     if r["riesgos"]:
         L.append("Riesgos (compatibilidad ≤ 2): " + "; ".join(f"{c} {n}" for c, n, _ in r["riesgos"]))
-    L.append("Ficha: " + " | ".join(f"{f['id']} {f['criterio']} = {f['nivel']} [{f['estado']}]" for f in r["filas"]))
+    desempate = motivo_desempate(r)
+    if desempate:
+        L.append("Motivo del desempate (R6): " + desempate)
+    L.append("FICHA (criterio = nivel [estado] · lo que dice el caso · supuesto):")
+    for f in r["filas"]:
+        cita = (f.get("evidencia") or "").strip()
+        cita = "" if cita.lower() in ("", "sin evidencia") else f" · «{cita.strip('«»')}»"
+        sup = f" · supuesto: {f['supuesto']}" if f.get("supuesto") else ""
+        L.append(f"- {f['id']} {f['criterio']} = {f['nivel']} [{f['estado']}]{cita}{sup}")
     return "\n".join(L)
 
 
+def motivo_desempate(r: dict) -> str:
+    """Explica con datos del motor qué paso de R6 decidió el empate técnico (vacío si no hubo empate)."""
+    if not r.get("empate") or not r.get("recomendacion"):
+        return ""
+    rec, partes = r["recomendacion"], []
+    for o in [m for m in r["en_empate"] if m != rec]:
+        if r["riesgo"][rec] != r["riesgo"][o]:
+            debiles = [f["id"] for f in r["filas"] if f["puntos"][o] <= 1]
+            partes.append(f"{rec} tiene {r['riesgo'][rec]} criterios con compatibilidad 1 o menos y {o} tiene "
+                          f"{r['riesgo'][o]} ({', '.join(debiles)}); gana el que tiene menos criterios débiles")
+        elif round(r["estructural"][rec], 4) != round(r["estructural"][o], 4):
+            partes.append(f"igualados en criterios débiles; en los criterios excluyentes {rec} suma "
+                          f"{motor._fmt(r['estructural'][rec])} y {o} {motor._fmt(r['estructural'][o])}")
+        else:
+            partes.append(f"igualados en criterios débiles y excluyentes frente a {o}; se elige el marco más liviano de adoptar")
+    return "; ".join(partes)
+
+
 def prompt_justificacion(texto: str, r: dict) -> str:
-    final = (f"4) La recomendación es PROVISIONAL: termina con 'Preguntas:' y 1 a 3 preguntas sobre {', '.join(r['faltantes'])}."
+    final = (f"4) La recomendación es PROVISIONAL: termina con 'Preguntas:' y 1 a 3 preguntas concretas para esta organización "
+             f"sobre {', '.join(r['faltantes'])}."
              if r.get("robustez", "").startswith("SENSIBLE") else
-             "4) Termina con 'Supuestos:' listando los datos inferidos o faltantes, o 'ninguno'.")
-    return ("Eres el asesor de agilidad a escala de un equipo de maestría. La matriz ya calculó el resultado; no cambies ningún número. "
-            "Escribe en español, máximo 180 palabras, con: 1) por qué gana " + str(r["recomendacion"]) +
-            " usando los 2-3 criterios que más lo separan del segundo; 2) por qué los demás quedan atrás o fueron excluidos; "
-            "3) riesgos de adopción y una recomendación práctica. " + final +
+             "4) Termina con 'Supuestos:' y lista solo los criterios Inferidos (con su supuesto) o Faltantes de la FICHA, o 'ninguno'.")
+    return ("Eres un asesor de agilidad a escala y le escribes directamente a la organización del caso. No uses saludos ni despedidas. "
+            "La matriz ya calculó el resultado: no cambies ni recalcules ningún número.\n"
+            "Escribe en español, máximo 190 palabras, en párrafos breves:\n"
+            "1) Por qué gana " + str(r["recomendacion"]) + ": toma los 2-3 criterios que más lo separan del segundo y, en cada uno, "
+            "nombra el hecho concreto del caso (usa lo que dice el caso en la FICHA) y la práctica del marco que responde a ese hecho.\n"
+            "2) Por qué los demás quedan atrás o fueron excluidos, con lo que les falta frente a hechos de ESTE caso. Si hubo empate "
+            "técnico, explica el desempate solo con el motivo indicado en el RESULTADO.\n"
+            "3) Riesgos de adopción ligados a hechos del caso y una recomendación práctica concreta para esta organización.\n"
+            + final + "\n"
+            "Reglas: no inventes datos, áreas, cifras ni supuestos que no estén en el caso o en la FICHA; evita frases genéricas "
+            "que servirían para cualquier organización; usa los nombres que usa el caso (productos, áreas, proveedores, comités)."
             "\n\nRESULTADO:\n" + resumen(r) + "\n\nCASO:\n" + (texto or "")[:4000])
 
 
