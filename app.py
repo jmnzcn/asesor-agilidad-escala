@@ -111,7 +111,7 @@ def reglas_para_prompt() -> str:
     for cid, c in reglas()["criterios"].items():
         L.append(f"{cid} {c['nombre']} (peso {c['peso'] * 100:.0f} %{', excluyente' if c['excluyente'] else ''})")
         if cid == "C1":
-            L.append("  valor = número entero de equipos, NUNCA el nombre de la banda (ej.: 22, no \"16 a 50 equipos\"); "
+            L.append("  valor = número entero de equipos, NUNCA el nombre de la banda (ej.: 12, no \"10 a 15 equipos\"); "
                      "si solo hay personas: equipos ≈ personas / 10, estado Inferido.")
             L += [f"  bandas: {', '.join(c['niveles'])}"]
         else:
@@ -141,7 +141,7 @@ def prompt_extraccion(texto: str) -> str:
             "\n\nESTADOS: \"Explícito\" (el caso lo dice), \"Inferido\" (evidencia indirecta; escribe el supuesto), "
             "\"Faltante\" (no hay base; valor null). No inventes datos. Si el caso declara algo que impide un marco "
             "(p. ej. que no se usará Scrum), ponlo en exclusiones con la frase citada.\n\n"
-            "Responde solo con JSON: {\"ficha\":{\"C1\":{\"valor\":22,\"estado\":\"Explícito\",\"evidencia\":\"«cita»\",\"supuesto\":\"\"}, "
+            "Responde solo con JSON: {\"ficha\":{\"C1\":{\"valor\":12,\"estado\":\"Explícito\",\"evidencia\":\"«cita»\",\"supuesto\":\"\"}, "
             "... \"C7\":{...}}, \"exclusiones\":{\"<marco>\":\"«cita»\"}}\n\nCASO:\n" + texto[:6000])
 
 
@@ -186,7 +186,7 @@ def mensaje_error(e: Exception) -> str:
 
 
 def equipos_desde_texto(valor: str, evidencia: str) -> int | None:
-    """C1 debe ser un número de equipos. Si la IA devolvió texto ("22 equipos" o la banda "16 a 50 equipos"),
+    """C1 debe ser un número de equipos. Si la IA devolvió texto ("12 equipos" o la banda "10 a 15 equipos"),
     toma el número que dé la misma banda: el citado en la evidencia o, si no hay, el mínimo de la banda."""
     nums = [int(x) for x in re.findall(r"\d+", valor)]
     bandas = {motor._norm(b): b for b in reglas()["criterios"]["C1"]["niveles"]}
