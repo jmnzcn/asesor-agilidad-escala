@@ -224,6 +224,10 @@ def prompt_justificacion(texto: str, r: dict) -> str:
 
 def mensaje_error(e: Exception) -> str:
     t = str(e)
+    if "402" in t or "prepayment" in t or "billing" in t.lower():
+        return ("La IA de esta demo no está disponible ahora: se agotaron los créditos de su cuenta de Gemini. "
+                "Llene la ficha a mano: el cálculo, los gráficos y el Excel funcionan igual. "
+                "(Administrador: recargue créditos en ai.studio/projects o use una clave del plan gratuito en Settings › Secrets.)")
     if "429" in t or "RESOURCE_EXHAUSTED" in t:
         return ("La IA recibió demasiadas consultas en este minuto (límite del plan gratuito de Gemini). "
                 "Espere un minuto y vuelva a intentarlo, o llene la ficha a mano: el cálculo y el Excel funcionan igual.")

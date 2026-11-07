@@ -2,6 +2,8 @@
 
 Agente que recomienda **Nexus, LeSS, SAFe o Disciplined Agile** con la matriz de decisión del equipo (PF-3872, UCR). La IA lee el caso y llena la ficha; un motor de reglas calcula con la matriz; el Excel descargable permite auditar cada número.
 
+![La aplicación: elegir un caso y pulsar «Analizar con IA»](docs/app.png)
+
 ## Cómo probarlo
 
 Hay tres formas, de la más sencilla a la más completa.
@@ -85,3 +87,30 @@ El 04/11/2026 se corrigió el texto de la hoja Instrucciones del Excel (evaluar 
 2. En **https://share.streamlit.io**, *Create app › Deploy a public app from GitHub*: elija el repositorio, la rama `main` y el archivo `app.py`.
 3. En **Advanced settings › Secrets**, pegue `GEMINI_API_KEY = "su-clave"`.
 4. Pulse **Deploy**. En pocos minutos queda publicada con un enlace abierto, sin registro.
+
+## Licencia
+
+El código (`app.py`, `motor_matriz.py`, `graficos.py`) está bajo licencia [MIT](LICENSE). La matriz de decisión
+(`Matriz_Decision_Agilidad_Escala.xlsx`) es el trabajo del equipo del curso PF-3872.
+
+---
+
+## English summary
+
+An agent that recommends a scaled agile framework (**Nexus, LeSS, SAFe or Disciplined Agile**) for an
+organization described in plain text. Built for a graduate course at the University of Costa Rica (PF-3872).
+
+- **The LLM reads, the rules engine decides.** Gemini reads the case, quotes the evidence and fills a
+  capture sheet (a level and a status for each of 7 criteria). `motor_matriz.py` then applies rules R1–R9
+  with the weights, levels and scores it reads from the team's Excel matrix. The model never does the math.
+- **Every number can be audited.** The app exports the matrix with the case filled in; Excel recalculates
+  it with its own formulas and must show the same totals.
+- **It says when it doesn't know.** Missing criteria stay missing; if they could change the answer, the
+  result is marked provisional and the agent asks follow-up questions. A robustness check (R7) runs every
+  combination of the missing data and reports whether the recommendation holds.
+- **Runs are logged** (CSV/JSON with the prompt, the model response, the matrix's SHA-256 fingerprint)
+  and two runs can be compared side by side.
+
+Try it at **https://asesor-agilidad-pf3872.streamlit.app/** (no account needed). Without an API key the
+app runs in manual mode: you fill in the sheet and the calculation, charts and Excel work the same.
+Stack: Python, Streamlit, Gemini, openpyxl, Plotly.
